@@ -86,10 +86,12 @@ async def evolution_webhook(request: Request, background_tasks: BackgroundTasks)
     if not remote_jid or not text:
         return {"status": "ignored"}
 
+    logger.info(f"[Webhook Evolution] Recebido de {clean_number} ({remote_jid}): {text[:50]}")
+
     # Verificação de segurança: Whitelist
     allowed = settings.allowed_users_set
     if allowed and clean_number not in allowed:
-        logger.warning(f"[ACESSO BLOQUEADO]: Número '{clean_number}' não está na lista de ALLOWED_USERS.")
+        logger.warning(f"[ACESSO BLOQUEADO WHATSAPP]: Número '{clean_number}' não está em ALLOWED_USERS: {allowed}")
         return {"status": "unauthorized"}
 
     # Processa em background para responder imediatamente 200 OK ao webhook da Evolution
@@ -110,10 +112,12 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     if not chat_id or not text:
         return {"status": "ignored"}
 
+    logger.info(f"[Webhook Telegram] Recebido do chat_id {chat_id}: {text[:50]}")
+
     # Verificação de segurança: Whitelist
     allowed = settings.allowed_users_set
     if allowed and chat_id not in allowed:
-        logger.warning(f"[ACESSO BLOQUEADO]: Chat ID Telegram '{chat_id}' não está na lista de ALLOWED_USERS.")
+        logger.warning(f"[ACESSO BLOQUEADO TELEGRAM]: Chat ID '{chat_id}' não está em ALLOWED_USERS: {allowed}")
         return {"status": "unauthorized"}
 
     # Processa em background para liberar o webhook do Telegram
