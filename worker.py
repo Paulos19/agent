@@ -11,9 +11,15 @@ from rich.panel import Panel
 from rich.table import Table
 from dotenv import load_dotenv
 
+# Garante suporte completo a UTF-8 no Windows (evita UnicodeEncodeError em consoles cp1252)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 load_dotenv()
 
-console = Console()
+console = Console(legacy_windows=False)
 
 # URL e token do WebSocket da VPS
 VPS_WS_URL = os.getenv("VPS_WS_URL", "wss://agent.phdev.top/ws/worker")
