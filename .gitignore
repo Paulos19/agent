@@ -1,0 +1,24 @@
+# Ambientes Virtuais
+.venv/
+venv/
+ENV/
+env/
+
+# Configurações e Segredos (CRÍTICO: nunca comitar .env)
+.env
+*.env.local
+
+# Arquivos temporários e Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Diretório de trabalho do agente (arquivos criados em tempo de execução)
+workspace/
+
+# Logs e IDEs
+*.log
+.vscode/
+.idea/

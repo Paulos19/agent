@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  assistente:
+    build: .
+    container_name: assistente-cli-agent
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Pasta onde o agente criará/editará arquivos na VPS
+      - ./workspace:/workspace
+      # (Opcional) Descomente a linha abaixo se quiser que o agente controle containers Docker da VPS
+      # - /var/run/docker.sock:/var/run/docker.sock
