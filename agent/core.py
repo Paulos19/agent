@@ -405,14 +405,15 @@ Capacidades de DevOps:
    - Se o usuário pedir ações no computador dele (Desktop, projetos locais, PowerShell), use target='pc'.
    - Se o computador pessoal estiver DESCONECTADO (Offline) e o usuário pedir algo no PC, informe educadamente que o computador pessoal dele está offline.
    - Se o usuário pedir ações no servidor em nuvem (ex: verificar status da VPS), use target='vps'.
-4. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
+4. Eficiência de Análise: Ao analisar uma pasta ou projeto, inspecione a estrutura e os arquivos principais de forma focada (README, package.json, requirements, main/app) e apresente logo a síntese completa sem fazer leituras excessivas.
+5. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
 """
 
 async def run_agent_loop(
     user_prompt: str,
     user_id: str,
     channel: str = "whatsapp",
-    max_turns: int = 10
+    max_turns: int = 25
 ) -> str:
     """
     Executa o loop ReAct do agente até que o Gemini produza a resposta final.
@@ -558,6 +559,21 @@ async def run_agent_loop(
             })
 
     if not final_reply and turns >= max_turns:
-        final_reply = "Atingi o limite de passos para esta tarefa. Verifique os logs para detalhes."
+        # Quando atinge o limite de passos exploratórios, força o modelo a gerar a síntese do que coletou
+        try:
+            messages.append({
+                "role": "user",
+                "content": "Atingimos o limite de etapas de exploração. Com base em todos os arquivos e dados que você inspecionou até agora, apresente agora a sua síntese e resposta final completa e bem estruturada."
+            })
+            resp = await client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=messages,
+                temperature=0.2,
+                stream=False
+            )
+            final_reply = resp.choices[0].message.content or "Análise concluída com base nas informações coletadas."
+            memory.add_message(user_id, {"role": "assistant", "content": final_reply})
+        except Exception as e:
+            final_reply = f"Concluí as leituras da pasta. Verifique os logs para detalhes adicionais ({str(e)})."
 
     return final_reply
