@@ -139,12 +139,13 @@ async def setup_docker_deployment(
             return "[ERRO]: O PC local está desconectado. Conecte o worker.py."
 
         # Grava Dockerfile e .dockerignore no PC
+        clean_path = project_path.rstrip("/\\")
         df_res = await node_manager.execute_on_pc("write_file", {
-            "path": f"{project_path.rstrip('/\\\\')}/Dockerfile",
+            "path": f"{clean_path}/Dockerfile",
             "content": dockerfile
         })
         di_res = await node_manager.execute_on_pc("write_file", {
-            "path": f"{project_path.rstrip('/\\\\')}/.dockerignore",
+            "path": f"{clean_path}/.dockerignore",
             "content": DOCKERIGNORE_CONTENT
         })
 
