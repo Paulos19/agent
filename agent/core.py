@@ -25,10 +25,10 @@ from tools import (
     execute_ssh_command
 )
 
-# Inicializa o cliente OpenAI apontando para a API do Google Gemini
+# Inicializa o cliente OpenAI apontando para o provedor configurado (Gemini, 9Router, etc.)
 client = AsyncOpenAI(
-    api_key=settings.GEMINI_API_KEY,
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+    api_key=settings.LLM_API_KEY,
+    base_url=settings.LLM_BASE_URL
 )
 
 # Definição das ferramentas com suporte a DevOps e destino híbrido (pc vs vps)
@@ -434,14 +434,15 @@ async def run_agent_loop(
 
         try:
             response = await client.chat.completions.create(
-                model=settings.GEMINI_MODEL,
+                model=settings.LLM_MODEL,
                 messages=messages,
                 tools=AGENT_TOOLS,
                 tool_choice="auto",
-                temperature=0.2
+                temperature=0.2,
+                stream=False
             )
         except Exception as e:
-            error_msg = f"[ERRO NO MODELO GEMINI]: {str(e)}"
+            error_msg = f"[ERRO NO MODELO LLM]: {str(e)}"
             return error_msg
 
         choice = response.choices[0]

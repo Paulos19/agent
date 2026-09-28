@@ -11,9 +11,10 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    # Gemini
-    GEMINI_API_KEY: str
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    # LLM Provider (Google Gemini, 9Router, LiteLLM, OpenAI)
+    LLM_API_KEY: str = Field(default="", validation_alias=AliasChoices("LLM_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"))
+    LLM_MODEL: str = Field(default="gemini-2.5-flash", validation_alias=AliasChoices("LLM_MODEL", "GEMINI_MODEL", "OPENAI_MODEL"))
+    LLM_BASE_URL: str = Field(default="https://generativelanguage.googleapis.com/v1beta/openai/", validation_alias=AliasChoices("LLM_BASE_URL", "OPENAI_BASE_URL", "GEMINI_BASE_URL"))
 
     # Segurança & Acesso
     ALLOWED_USERS: str = ""
