@@ -43,12 +43,25 @@ class Settings(BaseSettings):
 
     @property
     def allowed_users_set(self) -> Set[str]:
-        """Retorna uma lista limpa dos IDs e números autorizados."""
+        """Retorna uma lista limpa dos IDs e números autorizados com normalização de 9º dígito BR."""
         if not self.ALLOWED_USERS:
             return set()
-        # Normaliza removendo espaços e caracteres não numéricos comuns caso seja número
         items = [u.strip() for u in self.ALLOWED_USERS.split(",") if u.strip()]
-        return set(items)
+        result = set(items)
+        
+        # Normalização inteligente para números do Brasil (com e sem o 9º dígito)
+        for item in items:
+            clean = "".join(filter(str.isdigit, item))
+            if clean.startswith("55") and len(clean) == 13:
+                # 55 + DDD (2) + 9 + 8 dígitos -> Gera versão sem o 9
+                sem_9 = clean[:4] + clean[5:]
+                result.add(sem_9)
+            elif clean.startswith("55") and len(clean) == 12:
+                # 55 + DDD (2) + 8 dígitos -> Gera versão com o 9
+                com_9 = clean[:4] + "9" + clean[4:]
+                result.add(com_9)
+
+        return result
 
     @property
     def workspace_path(self) -> Path:
