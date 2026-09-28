@@ -1,13 +1,14 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
 import uvicorn
 
 from config import settings
 from tools.scheduler import init_scheduler
 from agent import run_agent_loop, memory
+from agent.nodes import node_manager
 from channels import (
     extract_evolution_message,
     send_evolution_message,
@@ -67,10 +68,38 @@ async def process_user_request(user_id: str, channel: str, prompt: str):
 async def root():
     return {
         "status": "online",
-        "agent": "DevOps & CLI Assistant",
-        "workspace": str(settings.workspace_path),
+        "agent": "DevOps & CLI Assistant (Hybrid Node)",
+        "vps_workspace": str(settings.workspace_path),
+        "pc_connected": node_manager.is_connected,
+        "pc_info": node_manager.pc_info if node_manager.is_connected else None,
         "model": settings.GEMINI_MODEL
     }
+
+@app.websocket("/ws/worker")
+async def worker_websocket(websocket: WebSocket, token: str = Query(...)):
+    """Canal seguro WebSocket para o Worker do computador pessoal (Windows)."""
+    if token != settings.WORKER_SECRET:
+        logger.warning(f"[WebSocket] Tentativa de conexão com token inválido.")
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+    logger.info("[WebSocket] Conexão WebSocket aceita. Aguardando identificação...")
+
+    try:
+        init_data = await websocket.receive_json()
+        client_info = init_data.get("info", {})
+        node_manager.register_pc(websocket, client_info)
+
+        while True:
+            data = await websocket.receive_json()
+            node_manager.handle_response(data)
+    except WebSocketDisconnect:
+        logger.info("[WebSocket] Worker do PC desconectou.")
+    except Exception as e:
+        logger.error(f"[WebSocket] Erro na comunicação com o worker: {e}")
+    finally:
+        node_manager.unregister_pc()
 
 @app.post("/webhook/evolution")
 async def evolution_webhook(request: Request, background_tasks: BackgroundTasks):

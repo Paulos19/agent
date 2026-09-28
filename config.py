@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     # Segurança & Acesso
     ALLOWED_USERS: str = ""
+    WORKER_SECRET: str = Field(default="devops_secret_token_123", validation_alias=AliasChoices("WORKER_SECRET", "NODE_TOKEN"))
 
     # Diretório de trabalho padrão
     WORKSPACE_DIR: str = "./workspace"

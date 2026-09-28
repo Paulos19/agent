@@ -5,6 +5,7 @@ from typing import Dict, Any, List
 from openai import AsyncOpenAI
 from config import settings
 from .memory import memory
+from .nodes import node_manager
 from tools import (
     execute_terminal_command,
     list_directory,
@@ -24,23 +25,28 @@ client = AsyncOpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 
-# Definição das ferramentas no padrão OpenAI / Gemini Function Calling
+# Definição das ferramentas com suporte a destino híbrido (pc vs vps)
 AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "execute_terminal_command",
-            "description": "Executa comandos no shell do sistema operacional (Bash no Linux ou PowerShell no Windows). Use para instalar pacotes, rodar scripts, verificar status, containers docker, etc.",
+            "description": "Executa comandos no terminal do computador pessoal (PowerShell/CMD) ou da VPS (Bash).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "O comando completo a ser executado."
+                        "description": "O comando a ser executado."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde executar: 'pc' para o computador pessoal Windows do usuário ou 'vps' para a nuvem."
                     },
                     "working_directory": {
                         "type": "string",
-                        "description": "Opcional. Caminho da pasta onde executar o comando."
+                        "description": "Opcional. Pasta onde executar o comando."
                     }
                 },
                 "required": ["command"]
@@ -57,7 +63,12 @@ AGENT_TOOLS = [
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Caminho do diretório (padrão é '.' para a raiz do workspace)."
+                        "description": "Caminho do diretório (ex: 'C:\\Users\\Usuario\\Desktop' ou '.')."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde listar: 'pc' para o computador pessoal ou 'vps' para a nuvem."
                     }
                 }
             }
@@ -67,13 +78,18 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Lê o conteúdo de um arquivo de texto com número de linhas.",
+            "description": "Lê o conteúdo de um arquivo de texto com numeração de linhas.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
                         "description": "Caminho do arquivo a ser lido."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde ler o arquivo: 'pc' para o computador pessoal ou 'vps' para a nuvem."
                     },
                     "max_lines": {
                         "type": "integer",
@@ -88,7 +104,7 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Cria ou substitui completamente o conteúdo de um arquivo. Use para criar novos scripts ou salvar código corrigido.",
+            "description": "Cria ou substitui completamente o conteúdo de um arquivo com o novo código.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -99,6 +115,11 @@ AGENT_TOOLS = [
                     "content": {
                         "type": "string",
                         "description": "O conteúdo de texto completo a ser salvo."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde gravar o arquivo: 'pc' para o computador pessoal ou 'vps' para a nuvem."
                     }
                 },
                 "required": ["path", "content"]
@@ -116,6 +137,11 @@ AGENT_TOOLS = [
                     "path": {
                         "type": "string",
                         "description": "Caminho da pasta a ser criada."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde criar a pasta: 'pc' para o computador pessoal ou 'vps' para a nuvem."
                     }
                 },
                 "required": ["path"]
@@ -126,7 +152,7 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "schedule_timer",
-            "description": "Programa uma tarefa para rodar daqui a N minutos.",
+            "description": "Programa uma tarefa para rodar daqui a N minutos na VPS.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -136,7 +162,7 @@ AGENT_TOOLS = [
                     },
                     "task_description": {
                         "type": "string",
-                        "description": "Instrução exata do que o agente deve fazer ao despertar."
+                        "description": "Instrução exata do que fazer ao despertar."
                     }
                 },
                 "required": ["delay_minutes", "task_description"]
@@ -147,7 +173,7 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "schedule_cron",
-            "description": "Programa uma tarefa recorrente usando expressão cron (ex: '0 9 * * *' para todo dia às 09:00).",
+            "description": "Programa uma tarefa recorrente usando expressão cron de 5 partes na VPS.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -196,7 +222,7 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "send_email",
-            "description": "Dispara um e-mail através das configurações SMTP.",
+            "description": "Dispara um e-mail através das configurações SMTP da VPS.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -224,22 +250,22 @@ AGENT_TOOLS = [
 ]
 
 def get_system_prompt() -> str:
-    os_name = platform.system()
+    pc_status = node_manager.get_status_description()
     workspace = str(settings.workspace_path)
-    return f"""Você é um Assistente Autônomo e Engenheiro de DevOps pessoal com acesso direto ao terminal da máquina e ao sistema de arquivos.
+    return f"""Você é um Assistente Autônomo e Engenheiro de DevOps pessoal com capacidade de controlar tanto a nuvem (VPS) quanto o computador pessoal (Windows) do usuário.
 
-Contexto do Ambiente:
-- Sistema Operacional: {os_name}
-- Diretório de Trabalho Padrão: {workspace}
+Topologia do Sistema:
+- Computador Pessoal do Usuário (Windows): {pc_status}
+- Servidor na Nuvem (Linux VPS): ATIVO (Workspace VPS: {workspace})
 - Canal de Comunicação: WhatsApp / Telegram
 
-Regras de Operação:
-1. Você tem ferramentas para rodar comandos de terminal, ler/escrever arquivos, criar pastas, agendar tarefas e enviar e-mails.
-2. Quando o usuário pedir para consertar código ou inspecionar um arquivo, SEMPRE use 'read_file' primeiro para entender o código existente antes de reescrevê-lo com 'write_file'.
-3. Sempre que criar ou editar um script ou código, execute-o ou teste-o usando 'execute_terminal_command' para garantir que não há erros de sintaxe ou execução.
-4. Mantenha suas mensagens finais formatadas para mensageiros como WhatsApp/Telegram (use *negrito*, _itálico_ e blocos de código com ```). Seja conciso e direto no resultado.
-5. Se o usuário pedir para agendar uma tarefa, use 'schedule_timer' ou 'schedule_cron'.
-6. Nunca exponha senhas ou dados confidenciais do arquivo .env.
+Regras de Roteamento de Ferramentas (Parâmetro 'target'):
+1. Se o usuário pedir ações no computador dele (ex: Área de Trabalho / Desktop, projetos locais, abrir pastas, editar arquivos do PC, rodar PowerShell local, etc.), use target='pc'.
+2. Se o computador pessoal estiver DESCONECTADO (Offline) e o usuário pedir algo no PC, informe educadamente que o computador pessoal dele está offline.
+3. Se o usuário pedir ações no servidor em nuvem (ex: verificar status da VPS, monitoramento, etc.), use target='vps'.
+4. Para ferramentas de e-mail e agendamento (cron/timer), a execução ocorre na VPS para funcionar 24h por dia.
+5. Sempre inspecione arquivos com 'read_file' antes de salvá-los com 'write_file'.
+6. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
 """
 
 async def run_agent_loop(
@@ -256,12 +282,10 @@ async def run_agent_loop(
     # Recupera histórico do usuário
     history = memory.get_history(user_id)
     
-    # Monta lista de mensagens com system prompt no início
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
     messages.append({"role": "user", "content": user_prompt})
 
-    # Adiciona ao histórico a pergunta do usuário
     memory.add_message(user_id, {"role": "user", "content": user_prompt})
 
     turns = 0
@@ -286,13 +310,11 @@ async def run_agent_loop(
         msg = choice.message
         messages.append(msg)
 
-        # Se não há chamadas de ferramenta, temos a resposta final
         if not msg.tool_calls:
             final_reply = msg.content or "Tarefa concluída."
             memory.add_message(user_id, {"role": "assistant", "content": final_reply})
             break
 
-        # Processa cada chamada de ferramenta
         for tool_call in msg.tool_calls:
             fn_name = tool_call.function.name
             raw_args = tool_call.function.arguments
@@ -302,12 +324,20 @@ async def run_agent_loop(
             except json.JSONDecodeError:
                 args = {}
 
-            print(f"[Agente Tool Call] -> {fn_name}({args})")
+            # Define o alvo da execução (pc vs vps)
+            target = args.get("target")
+            if not target:
+                # Se não especificado explicitamente, decide com base no estado e na intenção
+                target = "pc" if node_manager.is_connected else "vps"
+
+            print(f"[Agente Tool Call] -> {fn_name}(target={target}, args={args})")
             
-            # Despacho da ferramenta
             tool_output = ""
             try:
-                if fn_name == "execute_terminal_command":
+                # Se o alvo for o PC e for uma ferramenta de sistema de arquivos ou terminal:
+                if target == "pc" and fn_name in ["execute_terminal_command", "list_directory", "read_file", "write_file", "create_directory"]:
+                    tool_output = await node_manager.execute_on_pc(fn_name, args)
+                elif fn_name == "execute_terminal_command":
                     tool_output = await execute_terminal_command(
                         command=args.get("command", ""),
                         working_directory=args.get("working_directory")
@@ -350,7 +380,6 @@ async def run_agent_loop(
             except Exception as tool_err:
                 tool_output = f"[ERRO AO EXECUTAR {fn_name}]: {str(tool_err)}"
 
-            # Devolve a resposta da ferramenta para a conversa
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
