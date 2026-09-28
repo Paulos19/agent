@@ -5,6 +5,9 @@ from .mailer import send_email
 from .easypanel import trigger_easypanel_deploy
 from .git_tool import git_status, git_diff, git_commit_and_push, git_pull
 from .ssh_tool import execute_ssh_command
+from .github_tool import create_github_repository, push_project_to_github
+from .web_tool import search_and_read_documentation
+from .docker_tool import setup_docker_deployment
 
 __all__ = [
     "execute_terminal_command",
@@ -22,5 +25,9 @@ __all__ = [
     "git_diff",
     "git_commit_and_push",
     "git_pull",
-    "execute_ssh_command"
+    "execute_ssh_command",
+    "create_github_repository",
+    "push_project_to_github",
+    "search_and_read_documentation",
+    "setup_docker_deployment"
 ]

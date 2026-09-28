@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     EASYPANEL_DEPLOY_WEBHOOK: Optional[str] = None
     EASYPANEL_DEPLOY_WEBHOOKS: str = "{}"
 
+    # DevOps: GitHub Automation
+    GITHUB_TOKEN: Optional[str] = None
+    GITHUB_USERNAME: str = "Paulos19"
+
     @property
     def allowed_users_set(self) -> Set[str]:
         """Retorna uma lista limpa dos IDs e números autorizados com normalização de 9º dígito BR."""

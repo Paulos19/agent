@@ -22,7 +22,11 @@ from tools import (
     git_diff,
     git_commit_and_push,
     git_pull,
-    execute_ssh_command
+    execute_ssh_command,
+    create_github_repository,
+    push_project_to_github,
+    search_and_read_documentation,
+    setup_docker_deployment
 )
 
 # Inicializa o cliente OpenAI apontando para o provedor configurado (Gemini, 9Router, etc.)
@@ -378,6 +382,116 @@ AGENT_TOOLS = [
                 "required": ["to_email", "subject", "body"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_and_read_documentation",
+            "description": "Pesquisa documentações técnicas online ou extrai o conteúdo de uma página/doc web para consultar melhores práticas, sintaxes, APIs e inicializações de frameworks (ex: Next.js, Prisma, Tailwind).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Termo de busca técnica (ex: 'Next.js 15 create-next-app docs', 'Prisma Postgres setup')."
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "URL direta da página ou documentação para extrair o conteúdo textual limpo."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_github_repository",
+            "description": "Cria um novo repositório na conta do GitHub do usuário via API.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Nome do novo repositório (ex: 'meu-saas-nextjs')."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Descrição opcional do repositório."
+                    },
+                    "private": {
+                        "type": "boolean",
+                        "description": "Opcional. Se o repositório deve ser privado (padrão: false/público)."
+                    }
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "push_project_to_github",
+            "description": "Inicializa git no projeto local (se necessário), comita os arquivos e envia o código diretamente para o repositório do usuário no GitHub.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_path": {
+                        "type": "string",
+                        "description": "Caminho da pasta do projeto (ex: 'D:\\testes\\meu-saas')."
+                    },
+                    "repo_name": {
+                        "type": "string",
+                        "description": "Nome do repositório no GitHub para onde enviar o código."
+                    },
+                    "commit_message": {
+                        "type": "string",
+                        "description": "Mensagem do commit (padrão: 'feat: initial project commit by devops agent')."
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Nome da branch principal (padrão: 'main')."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde o projeto está localizado: 'pc' ou 'vps' (padrão: 'pc')."
+                    }
+                },
+                "required": ["repo_path", "repo_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "setup_docker_deployment",
+            "description": "Gera os arquivos Dockerfile multi-stage otimizado e .dockerignore para que o projeto possa rodar perfeitamente em container na VPS / Easypanel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Caminho da pasta do projeto (ex: 'D:\\testes\\meu-app')."
+                    },
+                    "project_type": {
+                        "type": "string",
+                        "enum": ["nextjs", "vite", "react", "fastapi", "nodejs"],
+                        "description": "Tipo de aplicação (padrão: 'nextjs')."
+                    },
+                    "port": {
+                        "type": "integer",
+                        "description": "Porta HTTP interna da aplicação (ex: 3000 para Next.js, 80 para Vite/Nginx, 8000 para FastAPI)."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde gravar os arquivos: 'pc' ou 'vps' (padrão: 'pc')."
+                    }
+                },
+                "required": ["project_path"]
+            }
+        }
     }
 ]
 
@@ -410,7 +524,16 @@ Capacidades de DevOps:
    - Quando o usuário pedir para alterar ou buscar algo (ex: 'remover texto X da hero'), observe no histórico da conversa qual projeto estava sendo manipulado recentemente (ex: 'D:\\testes\\removebg').
    - Faça buscas direcionadas apenas nas pastas de código do projeto ativo (ex: 'D:\\testes\\removebg\\frontend\\src' ou 'D:\\testes\\removebg\\app'). Se não souber em qual pasta procurar, pergunte ao usuário.
 5. Eficiência de Análise: Ao analisar uma pasta ou projeto, inspecione a estrutura e os arquivos principais de forma focada (README, package.json, requirements, main/app) e apresente logo a síntese completa sem fazer leituras excessivas.
-6. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
+6. Criação Autônoma de Aplicações Web e Deploy:
+   Quando o usuário solicitar a criação de um novo projeto (ex: criar app em Next.js, FastAPI, Vite/React):
+   a) Pesquisa de Documentações: Se tiver dúvidas sobre versões atuais ou sintaxes recomendadas, use 'search_and_read_documentation' para pesquisar na web ou ler docs oficiais.
+   b) Inicialização do Projeto: Execute o scaffold no PC (em 'D:\\testes\\<nome_projeto>') usando 'execute_terminal_command' (ex: 'npx -y create-next-app@latest ./ --typescript --tailwind --eslint --app --src-dir --no-turbopack --no-import-alias' de forma não-interativa).
+   c) Interação para Credenciais: Se o projeto precisar de banco de dados (ex: Supabase/PostgreSQL), chaves de API ou segredos de autenticação, pergunte objetivamente ao usuário no chat (ex: "Qual é a DATABASE_URL para conexão?").
+   d) Desenvolvimento dos Componentes: Crie e edite as páginas e componentes solicitados usando 'read_file' e 'write_file'.
+   e) Preparação para Docker: Chame 'setup_docker_deployment' para criar o Dockerfile multi-stage e .dockerignore no projeto.
+   f) Publicação no GitHub: Chame 'create_github_repository' para criar o repo na conta do usuário (Paulos19) e em seguida 'push_project_to_github' para enviar todo o código.
+   g) Finalização e Deploy: Forneça ao usuário a URL do repositório no GitHub e acione 'trigger_easypanel_deploy' ou forneça o link de acesso para o usuário.
+7. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
 """
 
 async def run_agent_loop(
@@ -581,6 +704,32 @@ async def run_agent_loop(
                         subject=args.get("subject", ""),
                         body=args.get("body", ""),
                         is_html=args.get("is_html", False)
+                    )
+                elif fn_name == "search_and_read_documentation":
+                    tool_output = await search_and_read_documentation(
+                        query=args.get("query", ""),
+                        url=args.get("url", "")
+                    )
+                elif fn_name == "create_github_repository":
+                    tool_output = await create_github_repository(
+                        name=args.get("name", ""),
+                        description=args.get("description", ""),
+                        private=args.get("private", False)
+                    )
+                elif fn_name == "push_project_to_github":
+                    tool_output = await push_project_to_github(
+                        repo_path=args.get("repo_path", ""),
+                        repo_name=args.get("repo_name", ""),
+                        commit_message=args.get("commit_message", "feat: initial project commit by devops agent"),
+                        branch=args.get("branch", "main"),
+                        target=args.get("target", "pc" if node_manager.is_connected else "vps")
+                    )
+                elif fn_name == "setup_docker_deployment":
+                    tool_output = await setup_docker_deployment(
+                        project_path=args.get("project_path", ""),
+                        project_type=args.get("project_type", "nextjs"),
+                        port=args.get("port", 3000),
+                        target=args.get("target", "pc" if node_manager.is_connected else "vps")
                     )
                 else:
                     tool_output = f"[ERRO]: Ferramenta '{fn_name}' desconhecida."
