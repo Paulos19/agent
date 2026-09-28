@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import List, Set
+from typing import List, Set, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, AliasChoices
 
@@ -41,6 +41,17 @@ class Settings(BaseSettings):
     # Servidor
     HOST: str = "0.0.0.0"
     PORT: int = 8000
+
+    # DevOps: SSH na VPS Host
+    VPS_SSH_HOST: Optional[str] = None
+    VPS_SSH_PORT: int = 22
+    VPS_SSH_USER: str = "root"
+    VPS_SSH_PASS: Optional[str] = None
+    VPS_SSH_KEY: Optional[str] = None
+
+    # DevOps: Easypanel Deploy Webhooks
+    EASYPANEL_DEPLOY_WEBHOOK: Optional[str] = None
+    EASYPANEL_DEPLOY_WEBHOOKS: str = "{}"
 
     @property
     def allowed_users_set(self) -> Set[str]:

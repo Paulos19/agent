@@ -152,6 +152,21 @@ async def handle_action(action: str, args: dict) -> str:
         res = local_write_file(args.get("path", ""), args.get("content", ""))
     elif action == "create_directory":
         res = local_create_directory(args.get("path", ""))
+    elif action == "git_status":
+        res = await run_local_command("git status", working_directory=args.get("repo_path", "."))
+    elif action == "git_diff":
+        res = await run_local_command("git diff", working_directory=args.get("repo_path", "."))
+    elif action == "git_pull":
+        b = args.get("branch", "main")
+        res = await run_local_command(f"git pull origin {b}", working_directory=args.get("repo_path", "."))
+    elif action == "git_commit_and_push":
+        msg = args.get("message", "update").replace('"', '\\"')
+        b = args.get("branch", "main")
+        res = await run_local_command(
+            f'git add . && git commit -m "{msg}" && git push origin {b}',
+            working_directory=args.get("repo_path", "."),
+            timeout=120
+        )
     else:
         res = f"[ERRO]: Ação local '{action}' desconhecida."
 

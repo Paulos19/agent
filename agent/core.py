@@ -16,7 +16,13 @@ from tools import (
     schedule_cron,
     list_scheduled_jobs,
     remove_scheduled_job,
-    send_email
+    send_email,
+    trigger_easypanel_deploy,
+    git_status,
+    git_diff,
+    git_commit_and_push,
+    git_pull,
+    execute_ssh_command
 )
 
 # Inicializa o cliente OpenAI apontando para a API do Google Gemini
@@ -25,7 +31,7 @@ client = AsyncOpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 
-# Definição das ferramentas com suporte a destino híbrido (pc vs vps)
+# Definição das ferramentas com suporte a DevOps e destino híbrido (pc vs vps)
 AGENT_TOOLS = [
     {
         "type": "function",
@@ -151,6 +157,132 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "git_status",
+            "description": "Mostra o status de um repositório Git (arquivos modificados, branch atual).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_path": {
+                        "type": "string",
+                        "description": "Caminho da pasta do repositório."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde executar: 'pc' ou 'vps'."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_commit_and_push",
+            "description": "Adiciona todas as alterações com 'git add .', realiza commit com a mensagem fornecida e envia com 'git push'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_path": {
+                        "type": "string",
+                        "description": "Caminho da pasta do repositório Git local."
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Mensagem descritiva e clara do commit."
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Nome da branch de destino (padrão: 'main')."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde executar: 'pc' ou 'vps'."
+                    }
+                },
+                "required": ["repo_path", "message"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_pull",
+            "description": "Executa 'git pull' para baixar as últimas alterações do repositório remoto.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_path": {
+                        "type": "string",
+                        "description": "Caminho da pasta do repositório."
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Nome da branch (padrão: 'main')."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde executar: 'pc' ou 'vps'."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "trigger_easypanel_deploy",
+            "description": "Aciona o Build e Deploy automático de um projeto/serviço no Easypanel através do Deploy Webhook.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "service_name_or_url": {
+                        "type": "string",
+                        "description": "Nome do serviço no Easypanel (ex: 'phdev') ou a URL completa do Deploy Webhook copiada do Easypanel."
+                    }
+                },
+                "required": ["service_name_or_url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_ssh_command",
+            "description": "Conecta via SSH na VPS hospedeira com usuário e senha para executar comandos no sistema Linux do Host (ex: 'docker ps', 'docker restart <container>', 'docker logs --tail 50 <container>').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Comando a ser executado via SSH no host da VPS."
+                    },
+                    "host": {
+                        "type": "string",
+                        "description": "Opcional. IP ou domínio da VPS (usa o padrão do .env se omitido)."
+                    },
+                    "user": {
+                        "type": "string",
+                        "description": "Opcional. Usuário SSH (padrão: 'root')."
+                    },
+                    "password": {
+                        "type": "string",
+                        "description": "Opcional. Senha SSH caso não esteja no .env."
+                    },
+                    "port": {
+                        "type": "integer",
+                        "description": "Opcional. Porta SSH (padrão: 22)."
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "schedule_timer",
             "description": "Programa uma tarefa para rodar daqui a N minutos na VPS.",
             "parameters": {
@@ -252,20 +384,28 @@ AGENT_TOOLS = [
 def get_system_prompt() -> str:
     pc_status = node_manager.get_status_description()
     workspace = str(settings.workspace_path)
-    return f"""Você é um Assistente Autônomo e Engenheiro de DevOps pessoal com capacidade de controlar tanto a nuvem (VPS) quanto o computador pessoal (Windows) do usuário.
+    return f"""Você é um Assistente Autônomo e Engenheiro de DevOps pessoal com capacidade de controlar a nuvem (VPS Easypanel) e o computador pessoal (Windows) do usuário.
 
 Topologia do Sistema:
 - Computador Pessoal do Usuário (Windows): {pc_status}
 - Servidor na Nuvem (Linux VPS): ATIVO (Workspace VPS: {workspace})
 - Canal de Comunicação: WhatsApp / Telegram
 
-Regras de Roteamento de Ferramentas (Parâmetro 'target'):
-1. Se o usuário pedir ações no computador dele (ex: Área de Trabalho / Desktop, projetos locais, abrir pastas, editar arquivos do PC, rodar PowerShell local, etc.), use target='pc'.
-2. Se o computador pessoal estiver DESCONECTADO (Offline) e o usuário pedir algo no PC, informe educadamente que o computador pessoal dele está offline.
-3. Se o usuário pedir ações no servidor em nuvem (ex: verificar status da VPS, monitoramento, etc.), use target='vps'.
-4. Para ferramentas de e-mail e agendamento (cron/timer), a execução ocorre na VPS para funcionar 24h por dia.
-5. Sempre inspecione arquivos com 'read_file' antes de salvá-los com 'write_file'.
-6. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
+Capacidades de DevOps:
+1. CICD e Deploy Easypanel:
+   - Para buildar e fazer deploy de projetos no Easypanel, use a ferramenta 'trigger_easypanel_deploy(service_name_or_url)'.
+   - O fluxo completo de DevOps:
+     a) Modifique ou inspecione o código no PC com 'read_file' e 'write_file'.
+     b) Use 'git_commit_and_push' para commitar as alterações e subir para o GitHub.
+     c) Acione 'trigger_easypanel_deploy' para o Easypanel rebuildar o container automaticamente.
+     d) Avise o usuário no chat com o resumo das alterações e status do deploy.
+2. Controle do Host via SSH:
+   - Use 'execute_ssh_command' para rodar comandos diretamente no sistema Linux da VPS (ex: 'docker ps', 'docker restart <container>', ver logs com 'docker logs', etc.).
+3. Regras de Roteamento (target):
+   - Se o usuário pedir ações no computador dele (Desktop, projetos locais, PowerShell), use target='pc'.
+   - Se o computador pessoal estiver DESCONECTADO (Offline) e o usuário pedir algo no PC, informe educadamente que o computador pessoal dele está offline.
+   - Se o usuário pedir ações no servidor em nuvem (ex: verificar status da VPS), use target='vps'.
+4. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
 """
 
 async def run_agent_loop(
@@ -278,8 +418,6 @@ async def run_agent_loop(
     Executa o loop ReAct do agente até que o Gemini produza a resposta final.
     """
     system_prompt = get_system_prompt()
-    
-    # Recupera histórico do usuário
     history = memory.get_history(user_id)
     
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
@@ -324,18 +462,28 @@ async def run_agent_loop(
             except json.JSONDecodeError:
                 args = {}
 
-            # Define o alvo da execução (pc vs vps)
             target = args.get("target")
             if not target:
-                # Se não especificado explicitamente, decide com base no estado e na intenção
                 target = "pc" if node_manager.is_connected else "vps"
 
             print(f"[Agente Tool Call] -> {fn_name}(target={target}, args={args})")
             
             tool_output = ""
             try:
-                # Se o alvo for o PC e for uma ferramenta de sistema de arquivos ou terminal:
-                if target == "pc" and fn_name in ["execute_terminal_command", "list_directory", "read_file", "write_file", "create_directory"]:
+                # Ações remotas que podem rodar no PC do usuário
+                pc_actions = [
+                    "execute_terminal_command",
+                    "list_directory",
+                    "read_file",
+                    "write_file",
+                    "create_directory",
+                    "git_status",
+                    "git_diff",
+                    "git_commit_and_push",
+                    "git_pull"
+                ]
+
+                if target == "pc" and fn_name in pc_actions:
                     tool_output = await node_manager.execute_on_pc(fn_name, args)
                 elif fn_name == "execute_terminal_command":
                     tool_output = await execute_terminal_command(
@@ -350,6 +498,28 @@ async def run_agent_loop(
                     tool_output = write_file(args.get("path", ""), args.get("content", ""))
                 elif fn_name == "create_directory":
                     tool_output = create_directory(args.get("path", ""))
+                elif fn_name == "git_status":
+                    tool_output = await git_status(args.get("repo_path", "."))
+                elif fn_name == "git_diff":
+                    tool_output = await git_diff(args.get("repo_path", "."))
+                elif fn_name == "git_pull":
+                    tool_output = await git_pull(args.get("repo_path", "."), args.get("branch", "main"))
+                elif fn_name == "git_commit_and_push":
+                    tool_output = await git_commit_and_push(
+                        repo_path=args.get("repo_path", "."),
+                        message=args.get("message", "update"),
+                        branch=args.get("branch", "main")
+                    )
+                elif fn_name == "trigger_easypanel_deploy":
+                    tool_output = await trigger_easypanel_deploy(args.get("service_name_or_url", ""))
+                elif fn_name == "execute_ssh_command":
+                    tool_output = await execute_ssh_command(
+                        command=args.get("command", ""),
+                        host=args.get("host"),
+                        port=args.get("port", 22),
+                        user=args.get("user"),
+                        password=args.get("password")
+                    )
                 elif fn_name == "schedule_timer":
                     tool_output = schedule_timer(
                         delay_minutes=args.get("delay_minutes", 1),
