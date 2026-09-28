@@ -45,6 +45,11 @@ async def run_local_command(command: str, working_directory: str = None, timeout
         out_str = stdout.decode("utf-8", errors="replace").strip()
         err_str = stderr.decode("utf-8", errors="replace").strip()
 
+        if len(out_str) > 6000:
+            out_str = out_str[:6000] + f"\n\n[...saída truncada no worker local ({len(out_str)} caracteres no total)...]"
+        if len(err_str) > 3000:
+            err_str = err_str[:3000] + f"\n\n[...stderr truncado no worker local ({len(err_str)} caracteres no total)...]"
+
         result = []
         result.append(f"[Exit Code]: {process.returncode}")
         if out_str:

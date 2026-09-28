@@ -72,7 +72,7 @@ async def root():
         "vps_workspace": str(settings.workspace_path),
         "pc_connected": node_manager.is_connected,
         "pc_info": node_manager.pc_info if node_manager.is_connected else None,
-        "model": settings.GEMINI_MODEL
+        "model": settings.LLM_MODEL
     }
 
 @app.websocket("/ws/worker")

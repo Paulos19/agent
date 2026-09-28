@@ -83,4 +83,12 @@ class Settings(BaseSettings):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    @property
+    def GEMINI_MODEL(self) -> str:
+        return self.LLM_MODEL
+
+    @property
+    def GEMINI_API_KEY(self) -> str:
+        return self.LLM_API_KEY
+
 settings = Settings()

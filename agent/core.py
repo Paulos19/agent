@@ -405,8 +405,12 @@ Capacidades de DevOps:
    - Se o usuário pedir ações no computador dele (Desktop, projetos locais, PowerShell), use target='pc'.
    - Se o computador pessoal estiver DESCONECTADO (Offline) e o usuário pedir algo no PC, informe educadamente que o computador pessoal dele está offline.
    - Se o usuário pedir ações no servidor em nuvem (ex: verificar status da VPS), use target='vps'.
-4. Eficiência de Análise: Ao analisar uma pasta ou projeto, inspecione a estrutura e os arquivos principais de forma focada (README, package.json, requirements, main/app) e apresente logo a síntese completa sem fazer leituras excessivas.
-5. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
+4. Regras Críticas de Busca e Contexto no PC (MUITO IMPORTANTE):
+   - NUNCA execute buscas ou varreduras recursivas em raízes de discos como 'C:\\' ou 'D:\\' (ex: 'Get-ChildItem -Path C:\\ -Recurse'). Isso trava a máquina e estoura o limite de tokens!
+   - Quando o usuário pedir para alterar ou buscar algo (ex: 'remover texto X da hero'), observe no histórico da conversa qual projeto estava sendo manipulado recentemente (ex: 'D:\\testes\\removebg').
+   - Faça buscas direcionadas apenas nas pastas de código do projeto ativo (ex: 'D:\\testes\\removebg\\frontend\\src' ou 'D:\\testes\\removebg\\app'). Se não souber em qual pasta procurar, pergunte ao usuário.
+5. Eficiência de Análise: Ao analisar uma pasta ou projeto, inspecione a estrutura e os arquivos principais de forma focada (README, package.json, requirements, main/app) e apresente logo a síntese completa sem fazer leituras excessivas.
+6. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
 """
 
 async def run_agent_loop(
@@ -433,6 +437,18 @@ async def run_agent_loop(
     while turns < max_turns:
         turns += 1
 
+        # Proteção contra estouro de contexto: compacta saídas antigas de ferramentas se passar de 25.000 chars
+        def _get_msg_content(m):
+            if isinstance(m, dict):
+                return str(m.get("content") or "")
+            return str(getattr(m, "content", "") or "")
+
+        total_chars = sum(len(_get_msg_content(m)) for m in messages)
+        if total_chars > 25000 and len(messages) > 4:
+            for m in messages[:-2]:
+                if isinstance(m, dict) and m.get("role") == "tool" and len(str(m.get("content", ""))) > 400:
+                    m["content"] = str(m["content"])[:400] + "\n\n[...saída anterior resumida para economizar contexto...]"
+
         try:
             response = await client.chat.completions.create(
                 model=settings.LLM_MODEL,
@@ -443,8 +459,27 @@ async def run_agent_loop(
                 stream=False
             )
         except Exception as e:
-            error_msg = f"[ERRO NO MODELO LLM]: {str(e)}"
-            return error_msg
+            err_str = str(e)
+            # Tentativa de recuperação automática se estourar limite de tokens da LLM
+            if ("exceeds" in err_str or "token" in err_str.lower() or "400" in err_str) and len(messages) > 3:
+                logger.warning(f"Limite de tokens atingido. Aplicando compressão de emergência no histórico: {err_str}")
+                for m in messages:
+                    if isinstance(m, dict) and m.get("role") == "tool":
+                        m["content"] = str(m.get("content", ""))[:200] + "\n[...resumido por limite de tokens...]"
+                try:
+                    retry_resp = await client.chat.completions.create(
+                        model=settings.LLM_MODEL,
+                        messages=messages,
+                        tools=AGENT_TOOLS,
+                        tool_choice="auto",
+                        temperature=0.2,
+                        stream=False
+                    )
+                    response = retry_resp
+                except Exception as retry_err:
+                    return f"[ERRO NO MODELO LLM]: {str(retry_err)}"
+            else:
+                return f"[ERRO NO MODELO LLM]: {err_str}"
 
         choice = response.choices[0]
         msg = choice.message
@@ -552,10 +587,14 @@ async def run_agent_loop(
             except Exception as tool_err:
                 tool_output = f"[ERRO AO EXECUTAR {fn_name}]: {str(tool_err)}"
 
+            tool_output_str = str(tool_output)
+            if len(tool_output_str) > 3500:
+                tool_output_str = tool_output_str[:3500] + f"\n\n[...saída truncada ({len(tool_output_str)} caracteres reduzidos para economizar tokens)...]"
+
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": str(tool_output)
+                "content": tool_output_str
             })
 
     if not final_reply and turns >= max_turns:
