@@ -5,21 +5,25 @@ import httpx
 from typing import Optional, Dict, Any
 from config import settings
 
-EASYPANEL_BASE_URL = os.getenv("EASYPANEL_URL", "http://179.197.77.183:3000")
-EASYPANEL_DEFAULT_DOMAIN = os.getenv("EASYPANEL_DOMAIN", "khdya3.easypanel.host")
+def _get_base_url() -> str:
+    return getattr(settings, "EASYPANEL_URL", "") or os.getenv("EASYPANEL_URL", "http://179.197.77.183:3000")
+
+def _get_default_domain() -> str:
+    return getattr(settings, "EASYPANEL_DOMAIN", "") or os.getenv("EASYPANEL_DOMAIN", "khdya3.easypanel.host")
 
 async def _get_auth_token() -> Optional[str]:
     """Obtém o token de autenticação do Easypanel via API Key ou login por e-mail/senha."""
-    api_key = os.getenv("EASYPANEL_API_KEY")
+    api_key = getattr(settings, "EASYPANEL_API_KEY", "") or os.getenv("EASYPANEL_API_KEY")
     if api_key:
-        return api_key.strip()
+        return str(api_key).strip()
 
-    email = os.getenv("EASYPANEL_EMAIL")
-    password = os.getenv("EASYPANEL_PASSWORD")
+    email = getattr(settings, "EASYPANEL_EMAIL", "") or os.getenv("EASYPANEL_EMAIL")
+    password = getattr(settings, "EASYPANEL_PASSWORD", "") or os.getenv("EASYPANEL_PASSWORD")
     if not email or not password:
         return None
 
-    login_url = f"{EASYPANEL_BASE_URL.rstrip('/')}/api/trpc/auth.login"
+    base_url = _get_base_url()
+    login_url = f"{base_url.rstrip('/')}/api/trpc/auth.login"
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(login_url, json={"json": {"email": email, "password": password}})
@@ -55,15 +59,14 @@ async def create_and_deploy_easypanel_app(
         "Content-Type": "application/json"
     }
 
-    base = f"{EASYPANEL_BASE_URL.rstrip('/')}/api/trpc"
+    base = f"{_get_base_url().rstrip('/')}/api/trpc"
+    target_domain = domain or f"{service_name}.{_get_default_domain()}"
 
-    # Extrai owner e repo da URL do git (ex: https://github.com/Paulos19/portal-clientes)
+    # Extrai owner e repo da URL do git (ex: https://github.com/Paulos19/hotdog-landing)
     clean_repo = git_repo.rstrip("/").removesuffix(".git")
     parts = clean_repo.split("/")
     owner = parts[-2] if len(parts) >= 2 else "Paulos19"
     repo_name = parts[-1] if len(parts) >= 1 else service_name
-
-    target_domain = domain or f"{service_name}.{EASYPANEL_DEFAULT_DOMAIN}"
 
     try:
         async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
@@ -150,7 +153,7 @@ async def create_and_deploy_easypanel_app(
             })
             token_webhook = inspect_resp.json().get("json", {}).get("token")
             if token_webhook:
-                webhook_url = f"{EASYPANEL_BASE_URL.rstrip('/')}/api/deploy/{token_webhook}"
+                webhook_url = f"{_get_base_url().rstrip('/')}/api/deploy/{token_webhook}"
                 await client.post(webhook_url)
             else:
                 await client.post(f"{base}/services.app.deployService", json={

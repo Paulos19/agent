@@ -52,6 +52,7 @@ class Settings(BaseSettings):
 
     # DevOps: Easypanel API & Deploy
     EASYPANEL_URL: str = "http://179.197.77.183:3000"
+    EASYPANEL_DOMAIN: str = "khdya3.easypanel.host"
     EASYPANEL_API_KEY: Optional[str] = None
     EASYPANEL_EMAIL: Optional[str] = None
     EASYPANEL_PASSWORD: Optional[str] = None

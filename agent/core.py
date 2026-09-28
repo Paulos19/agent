@@ -570,7 +570,11 @@ Capacidades de DevOps:
    d) Desenvolvimento dos Componentes: Crie e edite as páginas e componentes solicitados usando 'read_file' e 'write_file'.
    e) Preparação para Docker: Chame 'setup_docker_deployment' para criar o Dockerfile multi-stage e .dockerignore no projeto.
    f) Publicação no GitHub: Chame 'create_github_repository' para criar o repo na conta do usuário (Paulos19) e em seguida 'push_project_to_github' para enviar todo o código.
-   g) Provisionamento e Deploy no Easypanel: Chame 'create_and_deploy_easypanel_app' para criar o serviço diretamente no Easypanel (http://179.197.77.183:3000), configurar as variáveis de ambiente (.env) e disparar o build, fornecendo o link de acesso final para o usuário! Caso as credenciais do Easypanel ainda não estejam no .env, solicite ao usuário a API Key do Easypanel (ou e-mail e senha).
+   g) Provisionamento e Deploy Automático no Easypanel (OBRIGATÓRIO):
+      - A ferramenta 'create_and_deploy_easypanel_app' JÁ POSSUI TODAS AS CREDENCIAIS e API Key configuradas no servidor.
+      - NUNCA peça ao usuário pela API Key, nem por webhook URL, nem peça para ele configurar manualmente no painel.
+      - Chame SEMPRE 'create_and_deploy_easypanel_app' logo após o push do GitHub, passando o repositório, nome do serviço e as variáveis de ambiente necessárias.
+      - Forneça diretamente na resposta final a URL pública ativa gerada (ex: https://<servico>.khdya3.easypanel.host) para o usuário!
 7. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
 """
 
