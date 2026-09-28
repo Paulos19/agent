@@ -26,7 +26,8 @@ from tools import (
     create_github_repository,
     push_project_to_github,
     search_and_read_documentation,
-    setup_docker_deployment
+    setup_docker_deployment,
+    create_and_deploy_easypanel_app
 )
 
 # Inicializa o cliente OpenAI apontando para o provedor configurado (Gemini, 9Router, etc.)
@@ -492,6 +493,43 @@ AGENT_TOOLS = [
                 "required": ["project_path"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_and_deploy_easypanel_app",
+            "description": "Cria um novo serviço de aplicação no Easypanel, conecta o repositório GitHub, injeta variáveis de ambiente (.env), configura o domínio e inicia o build/deploy automaticamente.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_name": {
+                        "type": "string",
+                        "description": "Nome do projeto no Easypanel (ex: 'phdev')."
+                    },
+                    "service_name": {
+                        "type": "string",
+                        "description": "Nome do serviço a ser criado (ex: 'portal-clientes')."
+                    },
+                    "git_repo": {
+                        "type": "string",
+                        "description": "URL do repositório no GitHub (ex: 'https://github.com/Paulos19/portal-clientes')."
+                    },
+                    "env_vars": {
+                        "type": "object",
+                        "description": "Dicionário chave-valor com as variáveis de ambiente necessárias (ex: {'DATABASE_URL': '...', 'NEXTAUTH_SECRET': '...'})."
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Branch do Git (padrão: 'main')."
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Opcional. Domínio público da aplicação (ex: 'portal.phdev.top')."
+                    }
+                },
+                "required": ["project_name", "service_name", "git_repo"]
+            }
+        }
     }
 ]
 
@@ -532,7 +570,7 @@ Capacidades de DevOps:
    d) Desenvolvimento dos Componentes: Crie e edite as páginas e componentes solicitados usando 'read_file' e 'write_file'.
    e) Preparação para Docker: Chame 'setup_docker_deployment' para criar o Dockerfile multi-stage e .dockerignore no projeto.
    f) Publicação no GitHub: Chame 'create_github_repository' para criar o repo na conta do usuário (Paulos19) e em seguida 'push_project_to_github' para enviar todo o código.
-   g) Finalização e Deploy: Forneça ao usuário a URL do repositório no GitHub e acione 'trigger_easypanel_deploy' ou forneça o link de acesso para o usuário.
+   g) Provisionamento e Deploy no Easypanel: Chame 'create_and_deploy_easypanel_app' para criar o serviço diretamente no Easypanel (http://179.197.77.183:3000), configurar as variáveis de ambiente (.env) e disparar o build, fornecendo o link de acesso final para o usuário! Caso as credenciais do Easypanel ainda não estejam no .env, solicite ao usuário a API Key do Easypanel (ou e-mail e senha).
 7. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
 """
 
@@ -730,6 +768,15 @@ async def run_agent_loop(
                         project_type=args.get("project_type", "nextjs"),
                         port=args.get("port", 3000),
                         target=args.get("target", "pc" if node_manager.is_connected else "vps")
+                    )
+                elif fn_name == "create_and_deploy_easypanel_app":
+                    tool_output = await create_and_deploy_easypanel_app(
+                        project_name=args.get("project_name", "phdev"),
+                        service_name=args.get("service_name", ""),
+                        git_repo=args.get("git_repo", ""),
+                        env_vars=args.get("env_vars", {}),
+                        branch=args.get("branch", "main"),
+                        domain=args.get("domain")
                     )
                 else:
                     tool_output = f"[ERRO]: Ferramenta '{fn_name}' desconhecida."

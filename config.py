@@ -50,7 +50,11 @@ class Settings(BaseSettings):
     VPS_SSH_PASS: Optional[str] = None
     VPS_SSH_KEY: Optional[str] = None
 
-    # DevOps: Easypanel Deploy Webhooks
+    # DevOps: Easypanel API & Deploy
+    EASYPANEL_URL: str = "http://179.197.77.183:3000"
+    EASYPANEL_API_KEY: Optional[str] = None
+    EASYPANEL_EMAIL: Optional[str] = None
+    EASYPANEL_PASSWORD: Optional[str] = None
     EASYPANEL_DEPLOY_WEBHOOK: Optional[str] = None
     EASYPANEL_DEPLOY_WEBHOOKS: str = "{}"
 
