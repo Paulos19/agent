@@ -571,7 +571,9 @@ Capacidades de DevOps:
    c) Interação para Credenciais: Se o projeto precisar de banco de dados (ex: Supabase/PostgreSQL), chaves de API ou segredos de autenticação, pergunte objetivamente ao usuário no chat (ex: "Qual é a DATABASE_URL para conexão?").
    d) Desenvolvimento dos Componentes: Crie e edite as páginas e componentes solicitados usando 'read_file' e 'write_file'.
    e) Preparação para Docker: Chame 'setup_docker_deployment' para criar o Dockerfile multi-stage e .dockerignore no projeto.
-   f) Publicação no GitHub: Chame 'create_github_repository' para criar o repo na conta do usuário (Paulos19) e em seguida 'push_project_to_github' para enviar todo o código.
+   f) Publicação no GitHub:
+      - NUNCA execute comandos manuais de 'git remote add' ou 'git push' pelo execute_terminal_command! Use SEMPRE a ferramenta dedicada 'push_project_to_github', que já inclui o token de autenticação e evita travamento de credenciais.
+      - Chame primeiro 'create_github_repository' para criar o repo na conta do usuário (Paulos19) e em seguida 'push_project_to_github' para enviar todo o código.
    g) Provisionamento e Deploy Automático no Easypanel (OBRIGATÓRIO):
       - PROJETOS EXISTENTES NO EASYPANEL: 'services', 'databases' e 'n8n'. O projeto padrão para criar e hospedar novas aplicações é SEMPRE 'services' (NUNCA use 'phdev', 'default' ou crie projetos inexistentes).
       - A ferramenta 'create_and_deploy_easypanel_app' JÁ POSSUI TODAS AS CREDENCIAIS e API Key configuradas no servidor.

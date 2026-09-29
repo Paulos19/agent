@@ -33,6 +33,11 @@ def extract_evolution_message(payload: Dict[str, Any]) -> Tuple[Optional[str], O
 
     # Identifica o melhor candidato a remoteJid (WhatsApp JID)
     remote_jid = key.get("remoteJid", "")
+    
+    # 1. Ignora sumariamente mensagens de grupos, canais, newsletters e broadcasts de status
+    if not remote_jid or any(s in remote_jid for s in ["@g.us", "@broadcast", "@newsletter"]):
+        return None, None, None
+
     remote_jid_alt = key.get("remoteJidAlt", "")
     participant = key.get("participant", "") or data.get("participant", "")
     sender = data.get("sender", "")
@@ -64,16 +69,29 @@ def extract_evolution_message(payload: Dict[str, Any]) -> Tuple[Optional[str], O
     if not text:
         return None, None, None
 
-    # Se for mensagem enviada por mim (fromMe == True):
-    # Pode ser o próprio usuário conversando consigo mesmo ou enviando comandos na própria instância!
-    if is_from_me:
-        # Verifica se o texto é um eco exato de algo que o bot acabou de enviar via API
-        if text in _recently_sent_messages:
-            # É eco da resposta do bot, ignora
-            return None, None, None
+    # Verifica se o texto é um eco exato de algo que o bot acabou de enviar via API
+    if text in _recently_sent_messages:
+        return None, None, None
 
-    # Extrai apenas os dígitos do número
+    # Extrai apenas os dígitos do número do destinatário/remetente
     clean_number = re.sub(r"\D", "", target_jid.split("@")[0])
+    allowed = settings.allowed_users_set
+
+    # =========================================================================
+    # REGRAS CRÍTICAS DE PRIVACIDADE E FILTRAGEM (WHATSAPP PESSOAL)
+    # =========================================================================
+    if is_from_me:
+        # Mensagem enviada pelo próprio usuário no app do WhatsApp.
+        # REGRA MANDATÓRIA: Só processa se for no chat consigo mesmo ("Message Yourself" / "Você")!
+        # Se remote_jid for outra pessoa (amigo, cliente, familiar), o usuário está conversando
+        # com outra pessoa e o bot JAMAIS deve se intrometer ou responder!
+        if allowed and clean_number not in allowed:
+            return None, None, None
+    else:
+        # Mensagem recebida de fora (alguém mandando mensagem para o WhatsApp do usuário).
+        # Só deve responder se o remetente for um número expressamente autorizado (ex: outro chip cadastrado).
+        if allowed and clean_number not in allowed:
+            return None, None, None
 
     return target_jid, clean_number, text
 
