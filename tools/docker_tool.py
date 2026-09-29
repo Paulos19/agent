@@ -114,6 +114,63 @@ build
 __pycache__
 """
 
+async def _ensure_nextjs_standalone(project_path: str, target: str = "pc") -> None:
+    """Garante que 'output: standalone' esteja configurado no next.config.* para builds Docker multi-stage."""
+    clean_path = project_path.rstrip("/\\\\")
+    if target == "pc":
+        from agent.nodes import node_manager
+        if not node_manager.is_connected:
+            return
+        ps_script = (
+            f"$files = @('next.config.ts', 'next.config.mjs', 'next.config.js'); "
+            f"$found = $false; "
+            f"foreach ($f in $files) {{ "
+            f"  $p = Join-Path '{clean_path}' $f; "
+            f"  if (Test-Path $p) {{ "
+            f"    $found = $true; "
+            f"    $content = Get-Content -Raw $p; "
+            f"    if ($content -notmatch 'standalone') {{ "
+            f"      if ($content -match '(const\\s+nextConfig\\s*(:\\s*NextConfig)?\\s*=\\s*\\{{)') {{ "
+            f"        $content = $content -replace '(const\\s+nextConfig\\s*(:\\s*NextConfig)?\\s*=\\s*\\{{)', ('$1`n  output: \"standalone\",'); "
+            f"      }} elseif ($content -match '(module\\.exports\\s*=\\s*\\{{)') {{ "
+            f"        $content = $content -replace '(module\\.exports\\s*=\\s*\\{{)', ('$1`n  output: \"standalone\",'); "
+            f"      }} else {{ "
+            f"        $content = '/** @type {{import(\"next\").NextConfig}} */`nconst nextConfig = {{ output: \"standalone\" }};`nexport default nextConfig;'; "
+            f"      }} "
+            f"      Set-Content -Path $p -Value $content; "
+            f"    }} "
+            f"    break; "
+            f"  }} "
+            f"}}; "
+            f"if (-not $found) {{ "
+            f"  Set-Content -Path (Join-Path '{clean_path}' 'next.config.mjs') -Value '/** @type {{import(\"next\").NextConfig}} */`nconst nextConfig = {{`n  output: \"standalone\",`n}};`n`nexport default nextConfig;`n'; "
+            f"}}"
+        )
+        await node_manager.execute_on_pc("execute_terminal_command", {
+            "command": ps_script,
+            "working_directory": clean_path
+        })
+    else:
+        p = Path(project_path).resolve()
+        found = False
+        for cfg_name in ["next.config.ts", "next.config.mjs", "next.config.js"]:
+            cfg_file = p / cfg_name
+            if cfg_file.exists():
+                found = True
+                content = cfg_file.read_text(encoding="utf-8")
+                if "standalone" not in content:
+                    import re
+                    if "const nextConfig" in content:
+                        content = re.sub(r"(const\s+nextConfig\s*(?::\s*NextConfig)?\s*=\s*\{)", r'\1\n  output: "standalone",', content)
+                    elif "module.exports" in content:
+                        content = re.sub(r"(module\.exports\s*=\s*\{)", r'\1\n  output: "standalone",', content)
+                    else:
+                        content = '/** @type {import("next").NextConfig} */\nconst nextConfig = {\n  output: "standalone",\n};\nexport default nextConfig;\n'
+                    cfg_file.write_text(content, encoding="utf-8")
+                break
+        if not found:
+            (p / "next.config.mjs").write_text('/** @type {import("next").NextConfig} */\nconst nextConfig = {\n  output: "standalone",\n};\nexport default nextConfig;\n', encoding="utf-8")
+
 async def setup_docker_deployment(
     project_path: str,
     project_type: str = "nextjs",
@@ -124,7 +181,8 @@ async def setup_docker_deployment(
     Cria os arquivos de produção Dockerfile e .dockerignore no projeto para que o Easypanel ou Docker da VPS possa buildar perfeitamente.
     """
     proj_type = project_type.lower().strip()
-    if "next" in proj_type:
+    is_next = "next" in proj_type
+    if is_next:
         dockerfile = NEXTJS_DOCKERFILE
     elif any(k in proj_type for k in ["vite", "react", "vue"]):
         dockerfile = VITE_DOCKERFILE
@@ -138,8 +196,11 @@ async def setup_docker_deployment(
         if not node_manager.is_connected:
             return "[ERRO]: O PC local está desconectado. Conecte o worker.py."
 
+        clean_path = project_path.rstrip("/\\\\")
+        if is_next:
+            await _ensure_nextjs_standalone(clean_path, target="pc")
+
         # Grava Dockerfile e .dockerignore no PC
-        clean_path = project_path.rstrip("/\\")
         df_res = await node_manager.execute_on_pc("write_file", {
             "path": f"{clean_path}/Dockerfile",
             "content": dockerfile
@@ -165,6 +226,9 @@ async def setup_docker_deployment(
         # Gravação local na VPS
         p = Path(project_path).resolve()
         p.mkdir(parents=True, exist_ok=True)
+        if is_next:
+            await _ensure_nextjs_standalone(str(p), target="vps")
+
         (p / "Dockerfile").write_text(dockerfile, encoding="utf-8")
         (p / ".dockerignore").write_text(DOCKERIGNORE_CONTENT, encoding="utf-8")
 

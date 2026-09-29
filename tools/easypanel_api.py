@@ -154,14 +154,16 @@ async def create_and_deploy_easypanel_app(
             token_webhook = inspect_resp.json().get("json", {}).get("token")
             if token_webhook:
                 webhook_url = f"{_get_base_url().rstrip('/')}/api/deploy/{token_webhook}"
-                await client.post(webhook_url)
-            else:
-                await client.post(f"{base}/services.app.deployService", json={
-                    "json": {
-                        "projectName": project_name,
-                        "serviceName": service_name
-                    }
-                })
+                try:
+                    await client.post(webhook_url, json={})
+                except Exception:
+                    pass
+            await client.post(f"{base}/services.app.deployService", json={
+                "json": {
+                    "projectName": project_name,
+                    "serviceName": service_name
+                }
+            })
 
             return (
                 f"🚀 [APLICAÇÃO CRIADA E PUBLICADA NO EASYPANEL!]:\n"
