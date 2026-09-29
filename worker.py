@@ -17,9 +17,38 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+# Garante que o diretório de execução seja sempre a pasta do script
+os.chdir(Path(__file__).parent.resolve())
+
+import re
+from datetime import datetime
+
 load_dotenv()
 
 console = Console(legacy_windows=False)
+LOG_FILE = Path(__file__).parent / "worker.log"
+
+def log_event(message):
+    """Grava o evento no arquivo worker.log com timestamp."""
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(message, Panel):
+            clean_text = f"Worker Daemon Iniciado (Host: {platform.node()}, OS: {platform.system()} {platform.release()})"
+        else:
+            clean_text = re.sub(r'\[/?[a-zA-Z0-9_\s#]+\]', '', str(message)).strip()
+        if clean_text:
+            with open(LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(f"[{timestamp}] {clean_text}\n")
+    except Exception:
+        pass
+
+def log_print(msg: str):
+    """Imprime no console e registra no arquivo worker.log."""
+    try:
+        console.print(msg)
+    except Exception:
+        pass
+    log_event(msg)
 
 # URL e token do WebSocket da VPS
 VPS_WS_URL = os.getenv("VPS_WS_URL", "wss://agent.phdev.top/ws/worker")
@@ -146,9 +175,9 @@ def local_create_directory(path: str) -> str:
 
 async def handle_action(action: str, args: dict) -> str:
     """Roteia as ações recebidas da VPS para as funções locais."""
-    console.print(f"[bold cyan]⚡ Executando ação local:[/bold cyan] [yellow]{action}[/yellow]")
+    log_print(f"[bold cyan]⚡ Executando ação local:[/bold cyan] [yellow]{action}[/yellow]")
     if args:
-        console.print(f"   [dim]Parâmetros: {args}[/dim]")
+        log_print(f"   [dim]Parâmetros: {args}[/dim]")
 
     if action == "execute_terminal_command":
         res = await run_local_command(
@@ -181,7 +210,7 @@ async def handle_action(action: str, args: dict) -> str:
     else:
         res = f"[ERRO]: Ação local '{action}' desconhecida."
 
-    console.print(f"[green]✔ Concluído[/green] (tamanho da resposta: {len(res)} chars)")
+    log_print(f"[green]✔ Concluído[/green] (tamanho da resposta: {len(res)} chars)")
     return res
 
 async def worker_loop():
@@ -201,7 +230,7 @@ async def worker_loop():
         "workdir": os.getcwd()
     }
 
-    console.print(Panel.fit(
+    log_print(Panel.fit(
         f"[bold green]Assistente Local Worker (Daemon PC)[/bold green]\n"
         f"Usuário: [yellow]{user_name}[/yellow] | Máquina: [yellow]{hostname}[/yellow]\n"
         f"OS: [cyan]{os_info}[/cyan] | Desktop: [dim]{desktop_dir}[/dim]\n"
@@ -212,9 +241,9 @@ async def worker_loop():
 
     while True:
         try:
-            console.print(f"[dim]Tentando conectar ao servidor WebSocket na VPS...[/dim]")
+            log_print(f"[dim]Tentando conectar ao servidor WebSocket na VPS...[/dim]")
             async with websockets.connect(ws_url, ping_interval=20, ping_timeout=20) as ws:
-                console.print(f"[bold green]✔ CONECTADO COM SUCESSO À VPS![/bold green] O agente agora tem controle total deste PC.")
+                log_print(f"[bold green]✔ CONECTADO COM SUCESSO À VPS![/bold green] O agente agora tem controle total deste PC.")
                 
                 # Envia handshake com informações do PC
                 await ws.send(json.dumps({"type": "handshake", "info": system_info}))
@@ -242,9 +271,9 @@ async def worker_loop():
                     await ws.send(json.dumps(response_payload))
 
         except websockets.exceptions.ConnectionClosed:
-            console.print("[yellow]⚠ Conexão perdida com a VPS. Reconectando em 5 segundos...[/yellow]")
+            log_print("[yellow]⚠ Conexão perdida com a VPS. Reconectando em 5 segundos...[/yellow]")
         except Exception as e:
-            console.print(f"[red]❌ Erro de conexão: {str(e)}. Tentando novamente em 5 segundos...[/red]")
+            log_print(f"[red]❌ Erro de conexão: {str(e)}. Tentando novamente em 5 segundos...[/red]")
 
         await asyncio.sleep(5)
 
@@ -252,4 +281,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(worker_loop())
     except KeyboardInterrupt:
-        console.print("\n[bold red]Worker encerrado pelo usuário.[/bold red]")
+        log_print("\n[bold red]Worker encerrado pelo usuário.[/bold red]")
