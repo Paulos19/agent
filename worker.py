@@ -5,6 +5,7 @@ import platform
 import sys
 import getpass
 from pathlib import Path
+import base64
 import websockets
 from rich.console import Console
 from rich.panel import Panel
@@ -55,15 +56,70 @@ VPS_WS_URL = os.getenv("VPS_WS_URL", "wss://agent.phdev.top/ws/worker")
 WORKER_SECRET = os.getenv("WORKER_SECRET", "devops_secret_token_123")
 
 async def run_local_command(command: str, working_directory: str = None, timeout: int = 90) -> str:
-    """Executa o comando localmente no Windows (PowerShell/CMD)."""
-    cwd = working_directory or os.getcwd()
-    if not os.path.exists(cwd):
-        os.makedirs(cwd, exist_ok=True)
-
-    cmd = f'powershell -NoProfile -ExecutionPolicy Bypass -Command "{command}"'
+    """
+    Executa o comando localmente no Windows com PowerShell via EncodedCommand (Base64 UTF-16LE).
+    Elimina problemas de escape de aspas do cmd.exe, suporta múltiplos comandos separados por ponto e vírgula
+    e converte '&&' para ';' evitando erro de sintaxe do PowerShell 5.1.
+    """
+    cwd = working_directory
+    
+    # Se working_directory não foi passado, tenta extrair de comandos como 'Set-Location' ou 'cd'
+    if not cwd:
+        m = re.match(r'^(?:Set-Location|cd)\s+[\'"]?([A-Za-z]:\\[^\'";]+)[\'"]?', command.strip(), re.IGNORECASE)
+        if m:
+            potential_dir = m.group(1).strip()
+            if os.path.exists(potential_dir):
+                cwd = potential_dir
+    
+    cwd = cwd or os.getcwd()
     try:
-        process = await asyncio.create_subprocess_shell(
-            cmd,
+        cwd_path = Path(os.path.expanduser(cwd)).resolve()
+        cwd_path.mkdir(parents=True, exist_ok=True)
+        cwd = str(cwd_path)
+    except Exception:
+        cwd = os.getcwd()
+
+    # Prepara o comando PowerShell
+    clean_cmd = command.strip()
+    
+    # Converte ' && ' para '; ' e ' || ' para '; ' para total compatibilidade com PowerShell 5.1
+    clean_cmd = re.sub(r'\s*&&\s*', '; ', clean_cmd)
+    clean_cmd = re.sub(r'\s*\|\|\s*', '; ', clean_cmd)
+
+    # Identidade do Git e Token de Autenticação
+    git_token = os.getenv("GITHUB_TOKEN", "").strip()
+    
+    ps_header = [
+        "$ProgressPreference = 'SilentlyContinue'",
+        "$env:GIT_TERMINAL_PROMPT = '0'",
+        "$env:GCM_INTERACTIVE = 'never'"
+    ]
+    
+    # Se for comando que usa git, garante configuração de usuário e token
+    if "git" in clean_cmd.lower():
+        ps_header.append('git config user.name "Paulo Henrique"')
+        ps_header.append('git config user.email "paulohenrique.012araujo@gmail.com"')
+        ps_header.append('git config credential.helper ""')
+        if git_token and any(k in clean_cmd.lower() for k in ["push", "remote", "clone", "pull"]):
+            ps_header.append(
+                f'try {{ '
+                f'  $url = git remote get-url origin 2>$null; '
+                f'  if ($url -and ($url -match "github\\.com") -and -not ($url -match "{git_token}")) {{ '
+                f'    $authUrl = $url -replace "https://(?:[^@]+@)?github\\.com", "https://{git_token}@github.com"; '
+                f'    git remote set-url origin $authUrl '
+                f'  }} '
+                f'}} catch {{}}'
+            )
+
+    full_script = "\n".join(ps_header) + "\n" + clean_cmd
+    encoded = base64.b64encode(full_script.encode("utf-16le")).decode("ascii")
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-EncodedCommand", encoded,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd
@@ -80,10 +136,14 @@ async def run_local_command(command: str, working_directory: str = None, timeout
         out_str = stdout.decode("utf-8", errors="replace").strip()
         err_str = stderr.decode("utf-8", errors="replace").strip()
 
-        if len(out_str) > 6000:
-            out_str = out_str[:6000] + f"\n\n[...saída truncada no worker local ({len(out_str)} caracteres no total)...]"
-        if len(err_str) > 3000:
-            err_str = err_str[:3000] + f"\n\n[...stderr truncado no worker local ({len(err_str)} caracteres no total)...]"
+        # Remove eventuais linhas de aviso inócuas do PowerShell CLIXML
+        if "#< CLIXML" in err_str:
+            err_str = re.sub(r'#< CLIXML.*?</Objs>', '', err_str, flags=re.DOTALL).strip()
+
+        if len(out_str) > 8000:
+            out_str = out_str[:8000] + f"\n\n[...saída truncada no worker local ({len(out_str)} caracteres no total)...]"
+        if len(err_str) > 4000:
+            err_str = err_str[:4000] + f"\n\n[...stderr truncado no worker local ({len(err_str)} caracteres no total)...]"
 
         result = []
         result.append(f"[Exit Code]: {process.returncode}")
@@ -217,21 +277,44 @@ async def handle_action(action: str, args: dict, ws=None, call_id: str = None) -
         await send_progress(f"🔄 Puxando atualizações do GitHub (git pull origin {b})...")
         res = await run_local_command(f"git pull origin {b}", working_directory=args.get("repo_path", "."))
     elif action == "git_commit_and_push":
+        repo_dir = args.get("repo_path", ".")
         msg = args.get("message", "update").replace('"', '\\"')
         b = args.get("branch", "main")
-        await send_progress("📦 Empacotando arquivos e commitando no Git local...")
-        add_res = await run_local_command(
-            f'git add . && git commit -m "{msg}"',
-            working_directory=args.get("repo_path", "."),
-            timeout=60
-        )
+        git_token = os.getenv("GITHUB_TOKEN", "").strip()
+
+        await send_progress(f"📦 Verificando e commitando alterações no Git local ({b})...")
+        git_script = f"""
+git config user.name "Paulo Henrique"
+git config user.email "paulohenrique.012araujo@gmail.com"
+git config credential.helper ""
+$env:GIT_TERMINAL_PROMPT = '0'
+$env:GCM_INTERACTIVE = 'never'
+
+git add -A
+$status = git status --porcelain
+if ($status) {{
+    git commit -m "{msg}"
+}} else {{
+    Write-Output "Nenhum arquivo modificado para commitar."
+}}
+
+try {{
+    $url = git remote get-url origin 2>$null
+    if ($url -and ($url -match "github\\.com") -and -not ($url -match "{git_token}")) {{
+        $authUrl = $url -replace "https://(?:[^@]+@)?github\\.com", "https://{git_token}@github.com"
+        git remote set-url origin $authUrl
+    }}
+}} catch {{}}
+
+git branch -M {b}
+git push origin {b}
+"""
         await send_progress(f"🚀 Enviando commits para o GitHub (branch {b})...")
-        push_res = await run_local_command(
-            f'git push origin {b}',
-            working_directory=args.get("repo_path", "."),
+        res = await run_local_command(
+            git_script,
+            working_directory=repo_dir,
             timeout=120
         )
-        res = f"{add_res}\n\n{push_res}"
     else:
         res = f"[ERRO]: Ação local '{action}' desconhecida."
 

@@ -1,4 +1,5 @@
 import os
+import platform
 import asyncio
 from typing import Optional
 from .terminal import execute_terminal_command
@@ -30,38 +31,61 @@ async def git_commit_and_push(
     from config import settings
     token = settings.GITHUB_TOKEN or os.getenv("GITHUB_TOKEN", "")
     clean_message = message.replace('"', '\\"')
+    is_windows = platform.system().lower() == "windows"
 
-    # Configurações do Git para evitar prompts interativos no Windows e Linux
-    commands = [
-        'git config user.name "Paulo Henrique"',
-        'git config user.email "paulohenrique.012araujo@gmail.com"',
-        'git config credential.helper ""',
-        'git add .',
-        f'git commit -m "{clean_message}" || echo "Sem novas alterações"'
-    ]
+    if is_windows:
+        commands = [
+            '$ProgressPreference = "SilentlyContinue"',
+            '$env:GIT_TERMINAL_PROMPT = "0"',
+            '$env:GCM_INTERACTIVE = "never"',
+            'git config user.name "Paulo Henrique"',
+            'git config user.email "paulohenrique.012araujo@gmail.com"',
+            'git config credential.helper ""',
+            'git add -A',
+            f'git commit -m "{clean_message}" 2>$null; if ($LASTEXITCODE -ne 0) {{ Write-Output "Nenhuma nova alteracao detectada para commitar" }}'
+        ]
 
-    # Injeta token no remote origin se necessário para garantir push 100% autônomo
-    if token:
-        token_script = (
-            f'powershell -NoProfile -Command "'
-            f'try {{ '
-            f'  $url = git remote get-url origin 2>$null; '
-            f'  if ($url -and $url -match \'github\\.com\' -and -not ($url -match \'{token}\')) {{ '
-            f'    $authUrl = $url -replace \'https://(?:[^@]+@)?github\\.com\', \'https://{token}@github.com\'; '
-            f'    git remote set-url origin $authUrl '
-            f'  }} '
-            f'}} catch {{}}'
-            f'"'
-        )
-        commands.append(token_script)
+        if token:
+            token_script = (
+                f'try {{ '
+                f'  $url = git remote get-url origin 2>$null; '
+                f'  if ($url -and ($url -match "github\\.com") -and -not ($url -match "{token}")) {{ '
+                f'    $authUrl = $url -replace "https://(?:[^@]+@)?github\\.com", "https://{token}@github.com"; '
+                f'    git remote set-url origin $authUrl '
+                f'  }} '
+                f'}} catch {{}}'
+            )
+            commands.append(token_script)
 
-    commands.append(f'git push origin {branch}')
-    cmd = ' && '.join(commands)
+        commands.append(f'git branch -M {branch}')
+        commands.append(f'git push origin {branch}')
+        cmd = ";\n".join(commands)
+    else:
+        commands = [
+            'export GIT_TERMINAL_PROMPT=0',
+            'git config user.name "Paulo Henrique"',
+            'git config user.email "paulohenrique.012araujo@gmail.com"',
+            'git config credential.helper ""',
+            'git add -A',
+            f'git commit -m "{clean_message}" || echo "Sem novas alteracoes"'
+        ]
+        if token:
+            commands.append(
+                f'CURRENT_URL=$(git remote get-url origin 2>/dev/null || true); '
+                f'if [[ "$CURRENT_URL" =~ github\\.com ]] && [[ ! "$CURRENT_URL" =~ "{token}" ]]; then '
+                f'  AUTH_URL=$(echo "$CURRENT_URL" | sed "s|https://.*@github\\.com|https://{token}@github.com|" | sed "s|https://github\\.com|https://{token}@github.com|"); '
+                f'  git remote set-url origin "$AUTH_URL" 2>/dev/null || true; '
+                f'fi'
+            )
+        commands.append(f'git branch -M {branch}')
+        commands.append(f'git push origin {branch}')
+        cmd = " && ".join(commands)
+
     result = await execute_terminal_command(cmd, working_directory=repo_path, timeout=120)
     
     if "[Exit Code]: 0" in result or "Everything up-to-date" in result or "branch" in result or "-> main" in result:
-        return f"✔ [GIT SUCESSO]: Alterações commitadas e enviadas para 'origin {branch}'!\n\n{result}"
-    return f"⚠ [GIT ATENÇÃO]:\n{result}"
+        return f"[GIT SUCESSO]: Alterações commitadas e enviadas para 'origin {branch}'!\n\n{result}"
+    return f"[GIT ATENÇÃO]:\n{result}"
 
 async def git_pull(repo_path: str = ".", branch: str = "main") -> str:
     """Puxa as últimas atualizações do repositório remoto."""

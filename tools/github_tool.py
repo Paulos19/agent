@@ -87,27 +87,37 @@ async def push_project_to_github(
     # Sequência de comandos git compatível com PowerShell (PC) e Bash (VPS)
     if target == "pc":
         from agent.nodes import node_manager
+        clean_msg = commit_message.replace('"', '\\"')
         git_cmds = (
-            f'Set-Location -Path "{repo_path}"; '
+            f'$ProgressPreference = "SilentlyContinue"; '
+            f'$env:GIT_TERMINAL_PROMPT = "0"; '
+            f'$env:GCM_INTERACTIVE = "never"; '
             f'git init; '
             f'git config user.name "Paulo Henrique"; '
             f'git config user.email "paulohenrique.012araujo@gmail.com"; '
             f'git config credential.helper ""; '
-            f'$env:GIT_TERMINAL_PROMPT="0"; '
-            f'$env:GCM_INTERACTIVE="never"; '
-            f'git add .; '
-            f'git commit -m "{commit_message}"; '
+            f'git add -A; '
+            f'git commit -m "{clean_msg}" 2>$null; '
+            f'if ($LASTEXITCODE -ne 0) {{ Write-Output "Arquivos ja commitados ou sem alteracoes" }}; '
             f'git branch -M {branch}; '
-            f'if (git remote | Select-String -Pattern "^origin$") {{ '
+            f'try {{ '
+            f'  $url = git remote get-url origin 2>$null; '
+            f'  if ($url) {{ '
             f'    git remote set-url origin "{auth_remote_url}"; '
-            f'}} else {{ '
+            f'  }} else {{ '
             f'    git remote add origin "{auth_remote_url}"; '
+            f'  }} '
+            f'}} catch {{ '
+            f'  git remote add origin "{auth_remote_url}"; '
             f'}}; '
             f'git push -u origin {branch} --force'
         )
         if not node_manager.is_connected:
             return "[ERRO]: O PC local está desconectado. Inicie o worker.py no computador."
-        res = await node_manager.execute_on_pc("execute_terminal_command", {"command": git_cmds})
+        res = await node_manager.execute_on_pc("execute_terminal_command", {
+            "command": git_cmds,
+            "working_directory": repo_path
+        })
         return (
             f"🚀 [PUSH PARA GITHUB REALIZADO]:\n"
             f"- Repositório: {public_url}\n"

@@ -2,6 +2,8 @@ import asyncio
 import os
 import platform
 import sys
+import re
+import base64
 from typing import Optional
 from config import settings
 
@@ -11,7 +13,7 @@ async def execute_terminal_command(
     timeout: int = 90
 ) -> str:
     """
-    Executa um comando de terminal (Bash no Linux ou PowerShell no Windows).
+    Executa um comando de terminal (Bash no Linux/VPS ou PowerShell com EncodedCommand no Windows).
     
     Args:
         command: O comando a ser executado.
@@ -19,29 +21,48 @@ async def execute_terminal_command(
         timeout: Tempo máximo em segundos antes de cancelar o comando (padrão: 90s).
     """
     cwd = working_directory or str(settings.workspace_path)
-    if not os.path.exists(cwd):
-        os.makedirs(cwd, exist_ok=True)
+    try:
+        if not os.path.exists(cwd):
+            os.makedirs(cwd, exist_ok=True)
+    except Exception:
+        cwd = os.getcwd()
 
     is_windows = platform.system().lower() == "windows"
 
-    # Prepara a chamada de acordo com o Sistema Operacional
-    if is_windows:
-        # Usa powershell no Windows
-        executable = None
-        cmd = f'powershell -NoProfile -Command "{command}"'
-    else:
-        # Usa bash no Linux (padrão em VPS / Easypanel)
-        executable = "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh"
-        cmd = command
-
     try:
-        process = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=cwd,
-            executable=executable
-        )
+        if is_windows:
+            # Converte ' && ' e ' || ' para ';' para total compatibilidade com PowerShell 5.1
+            clean_cmd = command.strip()
+            clean_cmd = re.sub(r'\s*&&\s*', '; ', clean_cmd)
+            clean_cmd = re.sub(r'\s*\|\|\s*', '; ', clean_cmd)
+
+            ps_script = (
+                "$ProgressPreference = 'SilentlyContinue'\n"
+                "$env:GIT_TERMINAL_PROMPT = '0'\n"
+                "$env:GCM_INTERACTIVE = 'never'\n"
+                f"{clean_cmd}"
+            )
+            encoded = base64.b64encode(ps_script.encode("utf-16le")).decode("ascii")
+
+            process = await asyncio.create_subprocess_exec(
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-EncodedCommand", encoded,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd
+            )
+        else:
+            # Usa bash no Linux (padrão em VPS / Easypanel)
+            executable = "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh"
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+                executable=executable
+            )
 
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=float(timeout))
@@ -54,6 +75,10 @@ async def execute_terminal_command(
 
         out_decoded = stdout.decode("utf-8", errors="replace").strip()
         err_decoded = stderr.decode("utf-8", errors="replace").strip()
+
+        # Remove ruído do CLIXML do PowerShell se presente
+        if "#< CLIXML" in err_decoded:
+            err_decoded = re.sub(r'#< CLIXML.*?</Objs>', '', err_decoded, flags=re.DOTALL).strip()
 
         result_lines = []
         result_lines.append(f"[Exit Code]: {process.returncode}")
