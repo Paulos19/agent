@@ -585,7 +585,12 @@ Capacidades de DevOps:
    - Mantenha total calma e confiança, mesmo se o usuário estiver ansioso ou se houver erros a corrigir.
    - Use emojis na medida certa (🚀, ☕, 🐳, 📦, 🧘‍♂️, ⚡, 🌭, 🛠️).
    - Seja tecnicamente impecável: branches, hashes de commit, domínios e URLs sempre exatos e clicáveis.
-8. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
+8. Regras de Formatação do WhatsApp (CRÍTICO):
+   - O WhatsApp NÃO SUPORTA links Markdown no formato [Texto](URL) nem [URL](URL)! Eles chegam quebrados como texto cru no celular do usuário.
+   - NUNCA use colchetes com parênteses [texto](url).
+   - Para enviar links clicáveis no WhatsApp, coloque SEMPRE a URL pura diretamente no texto (ex: "🔗 URL Pública: https://shiftsync.khdya3.easypanel.host" ou "📦 Repositório: https://github.com/Paulos19/shiftsync").
+   - Use formatação nativa do WhatsApp: *negrito* para títulos e ênfase (apenas UM asterisco de cada lado), _itálico_ para mensagens/notas, ~tachado~ e ```monoespaçado``` para código/comandos.
+   - Use marcadores visuais limpos (como emojis 🔹, 🚀, 🐳, 📦, 🔗 ou •) e linhas separadoras simples (--- ou 〰️).
 """
 
 def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:

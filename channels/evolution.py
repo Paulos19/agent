@@ -77,6 +77,31 @@ def extract_evolution_message(payload: Dict[str, Any]) -> Tuple[Optional[str], O
 
     return target_jid, clean_number, text
 
+def format_whatsapp_message(text: str) -> str:
+    """
+    Converte marcações Markdown genéricas para o padrão nativo do WhatsApp:
+    - Links [Label](URL) ou [URL](URL) -> URL pura ou Label: URL (clicável no WhatsApp)
+    - **negrito** -> *negrito*
+    - Headers # Título -> *Título*
+    - Listas com asterisco (* item) -> • item (evita conflito com negrito do WhatsApp)
+    """
+    if not text:
+        return ""
+    # Converte links markdown
+    def _link_repl(match):
+        label, url = match.group(1).strip(), match.group(2).strip()
+        if label == url or "http" in label:
+            return url
+        return f"{label}: {url}"
+    formatted = re.sub(r'\[([^\]]+)\]\((https?://[^\s\)]+)\)', _link_repl, text)
+    # Converte **negrito** (Markdown padrão) para *negrito* (WhatsApp)
+    formatted = re.sub(r'\*\*(.*?)\*\*', r'*\1*', formatted)
+    # Converte headers #, ##, ### para *Header*
+    formatted = re.sub(r'^#{1,6}\s*(.+)$', r'*\1*', formatted, flags=re.MULTILINE)
+    # Substitui asteriscos soltos no início de linhas de lista por marcadores para evitar quebrar o negrito nativo
+    formatted = re.sub(r'^\*\s+', r'• ', formatted, flags=re.MULTILINE)
+    return formatted
+
 async def send_evolution_message(recipient: str, text: str) -> bool:
     """
     Envia uma mensagem de texto pelo WhatsApp através da Evolution API.
@@ -85,8 +110,11 @@ async def send_evolution_message(recipient: str, text: str) -> bool:
         print("[Evolution API] Erro: URL da Evolution ou Nome da Instância não configurados.")
         return False
 
+    formatted_text = format_whatsapp_message(text)
+
     # Registra no cache de mensagens enviadas para evitar loop de eco
     _recently_sent_messages[text.strip()] = time.time()
+    _recently_sent_messages[formatted_text.strip()] = time.time()
 
     url = f"{settings.EVOLUTION_API_URL.rstrip('/')}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
     headers = {
@@ -99,7 +127,7 @@ async def send_evolution_message(recipient: str, text: str) -> bool:
 
     payload = {
         "number": number_target,
-        "text": text,
+        "text": formatted_text,
         "delay": 500,
         "linkPreview": True
     }
