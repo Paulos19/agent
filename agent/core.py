@@ -1,7 +1,7 @@
 import json
 import os
 import platform
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple, Optional
 from openai import AsyncOpenAI
 from config import settings
 from .memory import memory
