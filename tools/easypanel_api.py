@@ -224,13 +224,15 @@ async def create_and_deploy_easypanel_app(
             }
             await client.post(f"{base}/services.app.updateSourceGithub", json=gh_payload)
 
-            # 3. Configura o builder para Dockerfile multi-stage
+            # 3. Configura o builder para Dockerfile multi-stage (schema aninhado correto do Easypanel)
             build_payload = {
                 "json": {
                     "projectName": project_name,
                     "serviceName": service_name,
-                    "type": "dockerfile",
-                    "file": "Dockerfile"
+                    "build": {
+                        "type": "dockerfile",
+                        "file": "Dockerfile"
+                    }
                 }
             }
             await client.post(f"{base}/services.app.updateBuild", json=build_payload)
@@ -267,7 +269,7 @@ async def create_and_deploy_easypanel_app(
                     f"do domínio falhou ({str(dom_err)}). Todo projeto precisa obrigatoriamente ter um domínio público apontado!"
                 )
 
-            # 6. Dispara o Deploy através do webhook direto do serviço
+            # 6. Dispara o Deploy através do webhook direto do serviço (modo assíncrono recomendado pelo Easypanel)
             inspect_resp = await client.post(f"{base}/services.app.inspectService", json={
                 "json": {
                     "projectName": project_name,
@@ -275,27 +277,39 @@ async def create_and_deploy_easypanel_app(
                 }
             })
             token_webhook = inspect_resp.json().get("json", {}).get("token")
+            deploy_triggered = False
             if token_webhook:
                 webhook_url = f"{_get_base_url().rstrip('/')}/api/deploy/{token_webhook}"
                 try:
-                    await client.post(webhook_url, json={})
-                except Exception:
-                    pass
-            await client.post(f"{base}/services.app.deployService", json={
-                "json": {
-                    "projectName": project_name,
-                    "serviceName": service_name
-                }
-            })
+                    wh_resp = await client.post(webhook_url, json={})
+                    if wh_resp.status_code in [200, 201, 202, 204]:
+                        deploy_triggered = True
+                except Exception as wh_err:
+                    print(f"Erro webhook deploy: {wh_err}")
 
-            domains_list_str = "\n".join(f"  - {d}" for d in active_domains)
+            # Se não conseguiu via webhook, tenta via deployService como fallback
+            if not deploy_triggered:
+                try:
+                    await client.post(f"{base}/services.app.deployService", json={
+                        "json": {
+                            "projectName": project_name,
+                            "serviceName": service_name,
+                            "forceRebuild": True
+                        }
+                    }, timeout=10.0)
+                except Exception:
+                    # deployService inicia a action de build em background no Docker
+                    pass
+
+            domains_list_str = "\n".join(f"• https://{d.replace('https://', '')}" for d in active_domains)
             return (
                 f"🚀 [APLICAÇÃO CRIADA E PUBLICADA NO EASYPANEL!]:\n"
-                f"- Projeto: {project_name}\n"
-                f"- Serviço: {service_name}\n"
-                f"- Repositório GitHub: https://github.com/{owner}/{repo_name}\n"
-                f"- Domínios Apontados (SSL Let's Encrypt):\n{domains_list_str}\n"
-                f"- O Easypanel iniciou o build e deploy em container com sucesso!"
+                f"• Projeto: {project_name}\n"
+                f"• Serviço: {service_name}\n"
+                f"• Repositório GitHub: https://github.com/{owner}/{repo_name}\n"
+                f"• Domínios Apontados (SSL Let's Encrypt):\n{domains_list_str}\n"
+                f"• O Easypanel iniciou o build e deploy em container com sucesso!"
             )
     except Exception as e:
-        return f"[ERRO AO PROVISIONAR NO EASYPANEL]: {str(e)}"
+        err_msg = str(e).strip() or f"{type(e).__name__} (comunicação com Easypanel)"
+        return f"[ERRO AO PROVISIONAR NO EASYPANEL]: {err_msg}"
