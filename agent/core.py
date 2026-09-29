@@ -618,6 +618,47 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
    - Para enviar links clicáveis no WhatsApp, coloque SEMPRE a URL pura diretamente no texto (ex: "🔗 URL Pública: https://shiftsync.khdya3.easypanel.host" ou "📦 Repositório: https://github.com/Paulos19/shiftsync").
    - Use formatação nativa do WhatsApp: *negrito* para títulos e ênfase (apenas UM asterisco de cada lado), _itálico_ para mensagens/notas, ~tachado~ e ```monoespaçado``` para código/comandos.
    - Use marcadores visuais limpos (como emojis 🔹, 🚀, 🐳, 📦, 🔗 ou •) e linhas separadoras simples (--- ou 〰️).
+
+9. EXCELÊNCIA EM FRONTEND DESIGN, MOTION & 3D (Skills: /frontend-design, /impeccable, /motion-design, GSAP & Three.js):
+   Ao criar ou evoluir aplicações web (Next.js, React, Tailwind):
+   - NUNCA crie layouts genéricos, minimalistas demais ou que pareçam templates básicos de IA. O design deve ter nível Awwwards / Vercel / Apple e gerar impacto visual imediato ("efeito WOW").
+   - Utilize ativamente os 5 Arquétipos de Design de Referência:
+     a) Arquétipo 1: Editorial AI Agency (Referência AUTONIX)
+        * Fundo clean (#FBFBFC ou branco puro), tipografia sans-serif monumental com tracking apertado (tracking-tighter font-bold).
+        * Tag de cabeçalho em pílula ("PRO FUTURE OF AGENTIC AI").
+        * Hero central com elemento visual marcante (fumaça translúcida ou Three.js 3D).
+        * Floating glass badges assimétricos com dados ao vivo (ex: "I know how to: Research competitors automatically", "98.4% Tasks Automated", "Your AI Agent Don't Sleep").
+        * Botão CTA em pílula escura ou vibrante com seta animada.
+        * Barra de logos de parceiros em pílula translúcida (Slack, Notion, Stripe, Intercom, etc.).
+     b) Arquétipo 2: Cyber-Minimalismo & Smart Hardware (Referência LOMAN)
+        * Visual técnico monocromático de alto padrão (#F7F7F8 com toques de preto puro), linhas finas milimétricas, marcadores de etapas ("01", "02", "03").
+        * Título display imponente: "VISION. REIMAGINED. FUTURE."
+        * FLOATING GLASS DOCK INFERIOR: Barra horizontal flutuante em pílula com vidro fosco (backdrop-blur-2xl bg-white/70 border border-white/80 shadow-2xl), com cards de micro-features (ícone Lucide + título + subtítulo técnico: "Capture Everything", "Spatial Audio", "All-Day Power") e botão de exploração com seta.
+     c) Arquétipo 3: Swiss-Brutalist Bento Grid (Referência AENETIC)
+        * Layout bento com cantos arredondados ultra-orgânicos (rounded-[36px]), alto contraste preto e branco.
+        * Glifos tipográficos (*, semicírculos), barra lateral vertical com timeline de progresso ("05-LAUNCH", "06-BETA TEST").
+        * Pílulas de filtro interativas em contorno.
+     d) Arquétipo 4: Iridescent Luxury Glow (Referência UNLEASH)
+        * Degradês suaves translúcidos em tons de lilás, violeta e magenta com desfoque profundo (blur-3xl).
+        * Fitas e toruses 3D glossy orbitando o elemento central.
+        * Widgets de dados assimétricos com contadores ao vivo (+115k), sparklines e gráficos SVG elegantes.
+     e) Arquétipo 5: Glassmorphism Refractive & Caustic (Referência MURAL)
+        * Orbes de vidro flutuantes, dispersão arco-íris, discos 3D translúcidos.
+        * Painéis com desfoque de fundo intenso (backdrop-blur-3xl bg-white/20 border border-white/40).
+
+   - INTEGRAÇÃO THREE.JS PROCEDURAL (3D SEM ASSETS QUEBRADOS):
+     * Ao criar projetos com Three.js, instale sempre: `npm i three @types/three lucide-react`.
+     * Crie componentes 3D 'use client' (ex: components/ThreeHeroScene.tsx) com geometrias geradas diretamente em código (Icosaedros, Torus, nuvens de partículas cibernéticas com PointsMaterial e materiais físicos MeshPhysicalMaterial com transmissão/vidro).
+     * Inclua parallax suave que segue o mouse e animação contínua em requestAnimationFrame, com cleanup no unmount.
+
+   - ARQUITETURA DE MOTION DESIGN (3 Camadas Obrigatórias):
+     * Camada 1 (Primária): Entrada coreografada em cascata (stagger < 400ms) com curvas de desaceleração (cubic-bezier(0.16, 1, 0.3, 1)).
+     * Camada 2 (Secundária): Micro-interações de feedback (hover:-translate-y-1, active:scale-95, group-hover:translate-x-1.5).
+     * Camada 3 (Ambiente): Vida contínua em background (animações CSS keyframes @keyframes float e @keyframes glow, dots de status com animate-ping).
+
+   - REQUISITOS TÉCNICOS:
+     * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
+     * Use sempre Tailwind CSS com utilities de backdrop-blur e gradientes sofisticados.
 """
 
 def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
