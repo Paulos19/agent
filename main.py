@@ -1,5 +1,7 @@
 import asyncio
+import time
 import logging
+from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
@@ -7,7 +9,7 @@ import uvicorn
 
 from config import settings
 from tools.scheduler import init_scheduler
-from agent import run_agent_loop, memory
+from agent import run_agent_loop, memory, task_manager
 from agent.nodes import node_manager
 from channels import (
     extract_evolution_message,
@@ -19,6 +21,16 @@ from channels import (
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("assistente-cli")
+
+async def send_channel_message(recipient: str, channel: str, text: str):
+    """Despacha mensagem de texto para o canal do usuário (WhatsApp ou Telegram)."""
+    try:
+        if channel == "whatsapp":
+            await send_evolution_message(recipient, text)
+        elif channel == "telegram":
+            await send_telegram_message(recipient, text)
+    except Exception as e:
+        logger.error(f"[Canal {channel}] Erro ao enviar mensagem para {recipient}: {e}")
 
 async def handle_scheduled_job(user_id: str, channel: str, prompt: str):
     """Callback invocado pelo agendador (APScheduler) quando uma tarefa dispara."""
@@ -40,29 +52,73 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Assistente CLI & DevOps Agent", lifespan=lifespan)
 
 async def process_user_request(user_id: str, channel: str, prompt: str):
-    """Executa a solicitação do usuário em background e envia a resposta."""
+    """Executa a solicitação do usuário com suporte a streaming de progresso e concorrência."""
     logger.info(f"[Iniciando Processamento] Usuário: {user_id} | Canal: {channel} | Prompt: {prompt[:60]}...")
     
-    # Comandos especiais de manutenção de memória
+    # 1. Comandos especiais de manutenção de memória
     if prompt.strip().lower() in ["/limpar", "/reset", "/clear"]:
         memory.clear(user_id)
-        msg_reset = "Memória da conversa resetada com sucesso."
-        if channel == "whatsapp":
-            await send_evolution_message(user_id, msg_reset)
-        else:
-            await send_telegram_message(user_id, msg_reset)
+        task_manager.finish_task(user_id)
+        msg_reset = "🧹 Memória da conversa e tarefas ativas resetadas com sucesso, chefe! Começando do zero."
+        await send_channel_message(user_id, channel, msg_reset)
         return
 
-    # Executa o loop do agente com o Gemini
-    reply = await run_agent_loop(user_prompt=prompt, user_id=user_id, channel=channel)
+    # 2. Se JÁ HOUVER uma tarefa ativa para este usuário
+    if task_manager.is_busy(user_id):
+        # A) Pergunta de status (ex: "como tá?", "status", "tá em que parte?", "falta muito?")
+        if task_manager.is_status_query(prompt):
+            status_reply = task_manager.build_status_response(user_id)
+            await send_channel_message(user_id, channel, status_reply)
+            return
 
-    # Devolve a resposta no canal apropriado
-    if channel == "whatsapp":
-        await send_evolution_message(user_id, reply)
-    elif channel == "telegram":
-        await send_telegram_message(user_id, reply)
-    
-    logger.info(f"[Concluído] Resposta enviada para {user_id} via {channel}.")
+        # B) Pedido de cancelamento (ex: "cancela", "para tudo", "abortar")
+        if task_manager.is_cancel_query(prompt):
+            cancelled = task_manager.cancel_task(user_id)
+            if cancelled:
+                cancel_reply = "🛑 *Parado, meu consagrado!* Cancelei a tarefa em andamento a seu pedido. Pode mandar a próxima missão quando quiser!"
+            else:
+                cancel_reply = "Não encontrei nenhuma tarefa rodando pra cancelar agora, chefe."
+            await send_channel_message(user_id, channel, cancel_reply)
+            return
+
+        # C) Nova instrução enviada no meio do processo
+        current_task = task_manager.get_task(user_id)
+        elapsed = int(time.time() - current_task.started_at) if current_task else 0
+        busy_reply = (
+            f"⏳ *Opa, segura a emoção aí, chefe!*\n\n"
+            f"Eu ainda tô no meio da tarefa anterior: *'{current_task.current_step if current_task else 'processando...'}'* (rodando há {elapsed}s).\n\n"
+            f"Para não embolar o meio de campo, espera eu terminar essa rapidinho ou manda um *'cancela'* se quiser que eu aborte ela agora pra pegar a nova!"
+        )
+        await send_channel_message(user_id, channel, busy_reply)
+        return
+
+    # 3. Registra nova tarefa no TaskManager
+    task_manager.start_task(user_id=user_id, prompt=prompt, channel=channel, task=asyncio.current_task())
+
+    # Callback de notificação de progresso passo a passo
+    async def on_step_notification(step_title: str, informal_message: Optional[str] = None):
+        task_manager.update_step(user_id, step_title)
+        if informal_message:
+            await send_channel_message(user_id, channel, informal_message)
+
+    try:
+        reply = await run_agent_loop(
+            user_prompt=prompt,
+            user_id=user_id,
+            channel=channel,
+            on_step=on_step_notification
+        )
+        # Devolve a resposta final completa
+        await send_channel_message(user_id, channel, reply)
+    except asyncio.CancelledError:
+        logger.info(f"Tarefa do usuário {user_id} cancelada com sucesso.")
+    except Exception as e:
+        logger.error(f"Erro ao processar solicitação: {e}")
+        err_msg = f"❌ *Eita, deu um tropeço aqui, chefe:*\n_{str(e)}_\n\nTenta de novo ou me passa mais detalhes!"
+        await send_channel_message(user_id, channel, err_msg)
+    finally:
+        task_manager.finish_task(user_id)
+        logger.info(f"[Concluído] Processamento finalizado para {user_id} via {channel}.")
 
 @app.get("/")
 async def root():

@@ -575,14 +575,78 @@ Capacidades de DevOps:
       - NUNCA peça ao usuário pela API Key, nem por webhook URL, nem peça para ele configurar manualmente no painel.
       - Chame SEMPRE 'create_and_deploy_easypanel_app' logo após o push do GitHub, passando o repositório, nome do serviço e as variáveis de ambiente necessárias.
       - Forneça diretamente na resposta final a URL pública ativa gerada (ex: https://<servico>.khdya3.easypanel.host) para o usuário!
-7. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
+7. Personalidade e Estilo de Comunicação (MUITO IMPORTANTE):
+   - Você é um Engenheiro DevOps & Tech Lead sênior parceiro ("camarada de trincheira"), extremamente competente, bem-humorado, calmo e seguro.
+   - Comunicação: Informal, irreverente, descontraída e direta ao ponto (ex: "Fala meu consagrado!", "Tudo safo", "Fica sussa", "Deploy no capricho", "Segura a emoção que o container tá subindo").
+   - NUNCA use linguagem robótica ou formalismo engravatado ("Prezado usuário", "Informo que executei a solicitação").
+   - Mantenha total calma e confiança, mesmo se o usuário estiver ansioso ou se houver erros a corrigir.
+   - Use emojis na medida certa (🚀, ☕, 🐳, 📦, 🧘‍♂️, ⚡, 🌭, 🛠️).
+   - Seja tecnicamente impecável: branches, hashes de commit, domínios e URLs sempre exatos e clicáveis.
+8. Mantenha respostas concisas e formatadas com markdown do WhatsApp/Telegram (use *negrito*, _itálico_ e ```código```).
 """
+
+def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
+    """Retorna (step_title, informal_notification)"""
+    if fn_name == "git_commit_and_push":
+        msg = args.get("message", "atualização")
+        branch = args.get("branch", "main")
+        return (
+            f"Commit e push no GitHub (branch {branch})",
+            f"📦 Empacotando e commitando as alterações (_{msg}_)... Subindo pro GitHub agora!"
+        )
+    elif fn_name == "push_project_to_github":
+        repo = args.get("repo_name", "GitHub")
+        return (
+            "Enviando projeto completo para o GitHub",
+            f"🚀 Subindo o projeto completo pro seu GitHub (`{repo}`) no capricho!"
+        )
+    elif fn_name == "create_github_repository":
+        repo_name = args.get("name", args.get("repo_name", "repositório"))
+        return (
+            f"Criando repositório {repo_name} no GitHub",
+            f"🐙 Criando o repositório `{repo_name}` novinho na sua conta do GitHub..."
+        )
+    elif fn_name == "create_and_deploy_easypanel_app":
+        srv = args.get("service_name", "app")
+        return (
+            f"Provisionamento e deploy no Easypanel ({srv})",
+            f"🐳 Acordando a API do Easypanel para subir o container de `{srv}`... Esse processo de build leva cerca de 1 minutinho, relaxa aí que já tá saindo do forno! ☕"
+        )
+    elif fn_name == "trigger_easypanel_deploy":
+        srv = args.get("service_name_or_url", "serviço")
+        return (
+            f"Disparando deploy no Easypanel ({srv})",
+            f"🔄 Disparando o rebuild do container no Easypanel... Te aviso assim que a porta subir!"
+        )
+    elif fn_name == "setup_docker_deployment":
+        proj_type = args.get("project_type", "projeto")
+        return (
+            f"Configurando Dockerfile para {proj_type}",
+            f"🐳 Gerando Dockerfile multi-stage standalone e .dockerignore para deploy liso..."
+        )
+    elif fn_name == "execute_terminal_command":
+        cmd = args.get("command", "")
+        clean_cmd = cmd.split("\n")[0][:45]
+        if any(k in cmd.lower() for k in ["npx", "create-next-app", "npm", "pnpm", "yarn", "build"]):
+            return (
+                f"Executando comando: {clean_cmd}",
+                f"⚡ Rodando comando de scaffold/build no seu Windows: `{clean_cmd}...`"
+            )
+        return (f"Executando no terminal: {clean_cmd}", "")
+    elif fn_name == "search_and_read_documentation":
+        query = args.get("query", "documentação")
+        return (
+            f"Pesquisando documentação: {query}",
+            f"🔎 Consultando a documentação oficial na web sobre `{query}`..."
+        )
+    return (f"Executando {fn_name}", "")
 
 async def run_agent_loop(
     user_prompt: str,
     user_id: str,
     channel: str = "whatsapp",
-    max_turns: int = 25
+    max_turns: int = 25,
+    on_step: Optional[Any] = None
 ) -> str:
     """
     Executa o loop ReAct do agente até que o Gemini produza a resposta final.
@@ -668,6 +732,14 @@ async def run_agent_loop(
             if not target:
                 target = "pc" if node_manager.is_connected else "vps"
 
+            # Notifica o usuário sobre a etapa de forma informal e irreverente
+            step_title, informal_msg = _get_friendly_step_message(fn_name, args)
+            if on_step and informal_msg:
+                try:
+                    await on_step(step_title, informal_msg)
+                except Exception as notify_err:
+                    logger.warning(f"Erro ao emitir aviso de etapa: {notify_err}")
+
             print(f"[Agente Tool Call] -> {fn_name}(target={target}, args={args})")
             
             tool_output = ""
@@ -686,7 +758,18 @@ async def run_agent_loop(
                 ]
 
                 if target == "pc" and fn_name in pc_actions:
-                    tool_output = await node_manager.execute_on_pc(fn_name, args)
+                    async def _pc_progress_forward(p_msg: str):
+                        if on_step and p_msg:
+                            try:
+                                await on_step("Progresso no seu PC", p_msg)
+                            except Exception:
+                                pass
+
+                    tool_output = await node_manager.execute_on_pc(
+                        fn_name,
+                        args,
+                        on_progress=_pc_progress_forward if on_step else None
+                    )
                 elif fn_name == "execute_terminal_command":
                     tool_output = await execute_terminal_command(
                         command=args.get("command", ""),

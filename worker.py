@@ -173,15 +173,31 @@ def local_create_directory(path: str) -> str:
     except Exception as e:
         return f"[ERRO AO CRIAR PASTA]: {str(e)}"
 
-async def handle_action(action: str, args: dict) -> str:
-    """Roteia as ações recebidas da VPS para as funções locais."""
+async def handle_action(action: str, args: dict, ws=None, call_id: str = None) -> str:
+    """Roteia as ações recebidas da VPS para as funções locais com suporte a streaming de progresso."""
     log_print(f"[bold cyan]⚡ Executando ação local:[/bold cyan] [yellow]{action}[/yellow]")
     if args:
         log_print(f"   [dim]Parâmetros: {args}[/dim]")
 
+    async def send_progress(msg: str):
+        if ws and call_id:
+            try:
+                await ws.send(json.dumps({
+                    "id": call_id,
+                    "type": "progress",
+                    "message": msg
+                }))
+            except Exception:
+                pass
+
     if action == "execute_terminal_command":
+        cmd = args.get("command", "")
+        # Emite progresso se for comando de scaffold, build ou pacote
+        if any(k in cmd.lower() for k in ["npm", "pnpm", "yarn", "build", "npx", "install", "clone"]):
+            clean_cmd = cmd.split("\n")[0][:45]
+            await send_progress(f"⚡ Rodando comando no seu Windows: `{clean_cmd}...`")
         res = await run_local_command(
-            command=args.get("command", ""),
+            command=cmd,
             working_directory=args.get("working_directory")
         )
     elif action == "list_directory":
@@ -198,15 +214,24 @@ async def handle_action(action: str, args: dict) -> str:
         res = await run_local_command("git diff", working_directory=args.get("repo_path", "."))
     elif action == "git_pull":
         b = args.get("branch", "main")
+        await send_progress(f"🔄 Puxando atualizações do GitHub (git pull origin {b})...")
         res = await run_local_command(f"git pull origin {b}", working_directory=args.get("repo_path", "."))
     elif action == "git_commit_and_push":
         msg = args.get("message", "update").replace('"', '\\"')
         b = args.get("branch", "main")
-        res = await run_local_command(
-            f'git add . && git commit -m "{msg}" && git push origin {b}',
+        await send_progress("📦 Empacotando arquivos e commitando no Git local...")
+        add_res = await run_local_command(
+            f'git add . && git commit -m "{msg}"',
+            working_directory=args.get("repo_path", "."),
+            timeout=60
+        )
+        await send_progress(f"🚀 Enviando commits para o GitHub (branch {b})...")
+        push_res = await run_local_command(
+            f'git push origin {b}',
             working_directory=args.get("repo_path", "."),
             timeout=120
         )
+        res = f"{add_res}\n\n{push_res}"
     else:
         res = f"[ERRO]: Ação local '{action}' desconhecida."
 
@@ -259,8 +284,8 @@ async def worker_loop():
                     if not call_id or not action:
                         continue
 
-                    # Executa a ação
-                    result = await handle_action(action, args)
+                    # Executa a ação passando ws e call_id para poder enviar mensagens de progresso
+                    result = await handle_action(action, args, ws=ws, call_id=call_id)
 
                     # Envia a resposta de volta à VPS
                     response_payload = {
