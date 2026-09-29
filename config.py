@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     VPS_SSH_KEY: Optional[str] = None
 
     # DevOps: Easypanel API & Deploy
-    EASYPANEL_URL: str = "http://179.197.77.183:3000"
+    EASYPANEL_URL: str = "https://khdya3.easypanel.host"
     EASYPANEL_DOMAIN: str = "khdya3.easypanel.host"
     EASYPANEL_API_KEY: Optional[str] = None
     EASYPANEL_EMAIL: Optional[str] = None

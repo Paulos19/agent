@@ -6,7 +6,12 @@ from typing import Optional, Dict, Any, List, Tuple
 from config import settings
 
 def _get_base_url() -> str:
-    return getattr(settings, "EASYPANEL_URL", "") or os.getenv("EASYPANEL_URL", "http://179.197.77.183:3000")
+    custom = getattr(settings, "EASYPANEL_URL", "") or os.getenv("EASYPANEL_URL", "")
+    # Se for o IP direto da VPS com porta 3000, descarta para evitar timeouts dentro dos containers
+    if custom and not any(bad in custom for bad in ["179.197.77.183:3000", "localhost:3000", "127.0.0.1:3000"]):
+        return custom.rstrip("/")
+    domain = _get_default_domain()
+    return f"https://{domain}"
 
 def _get_default_domain() -> str:
     return getattr(settings, "EASYPANEL_DOMAIN", "") or os.getenv("EASYPANEL_DOMAIN", "khdya3.easypanel.host")
@@ -78,12 +83,40 @@ async def add_service_domain(
     port: int = 3000,
     client: Optional[httpx.AsyncClient] = None
 ) -> Tuple[bool, str]:
-    """Cria e aponta um domínio para o serviço no Easypanel com terminação SSL automática."""
+    """Cria ou atualiza um domínio para o serviço no Easypanel com terminação SSL automática e porta customizada."""
     token = await _get_auth_token()
     if not token:
         return False, "Token de autenticação do Easypanel não configurado"
     base = f"{_get_base_url().rstrip('/')}/api/trpc"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    
+    # 1. Verifica se o domínio já existe no cluster
+    existing_domains = await list_easypanel_domains(client)
+    for d in existing_domains:
+        if d.get("host") == host:
+            dest = d.get("serviceDestination", {})
+            # Se já pertence a este serviço, verifica se a porta precisa ser atualizada
+            if dest.get("projectName") == project_name and dest.get("serviceName") == service_name:
+                if dest.get("port") == port:
+                    return True, "Domínio já apontado corretamente para este serviço"
+                # Porta diferente: atualiza via updateDomain
+                d_copy = dict(d)
+                d_copy["serviceDestination"] = dict(dest)
+                d_copy["serviceDestination"]["port"] = port
+                async def _update(c: httpx.AsyncClient):
+                    r = await c.post(f"{base}/domains.updateDomain", json={"json": d_copy})
+                    if r.status_code == 200:
+                        return True, f"Porta do domínio atualizada com sucesso para {port}"
+                    return False, r.text
+                if client:
+                    return await _update(client)
+                else:
+                    async with httpx.AsyncClient(timeout=15.0, headers=headers) as c:
+                        return await _update(c)
+            else:
+                return False, f"Domínio {host} já está sendo utilizado por outro serviço: {dest.get('serviceName')}"
+
+    # 2. Domínio novo: cria no Easypanel
     domain_id = f"dom_{uuid.uuid4().hex[:12]}"
     payload = {
         "json": {

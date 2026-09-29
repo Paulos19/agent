@@ -8,6 +8,8 @@ def _get_deploy_webhook(service_name_or_url: str) -> Optional[str]:
     """Resolve a URL do webhook de deploy a partir do nome do serviço ou URL direta."""
     target = service_name_or_url.strip()
     if target.startswith("http://") or target.startswith("https://"):
+        if "179.197.77.183:3000" in target:
+            return target.replace("http://179.197.77.183:3000", "https://khdya3.easypanel.host")
         return target
 
     # Tenta ler do mapa JSON em EASYPANEL_DEPLOY_WEBHOOKS
@@ -15,7 +17,8 @@ def _get_deploy_webhook(service_name_or_url: str) -> Optional[str]:
     try:
         webhooks_map: Dict[str, str] = json.loads(raw_map)
         if target.lower() in webhooks_map:
-            return webhooks_map[target.lower()]
+            wh = webhooks_map[target.lower()]
+            return wh.replace("http://179.197.77.183:3000", "https://khdya3.easypanel.host")
     except Exception:
         pass
 
@@ -23,10 +26,13 @@ def _get_deploy_webhook(service_name_or_url: str) -> Optional[str]:
     env_var_name = f"EASYPANEL_DEPLOY_{target.upper().replace('-', '_')}_WEBHOOK"
     found = os.getenv(env_var_name)
     if found:
-        return found
+        return found.replace("http://179.197.77.183:3000", "https://khdya3.easypanel.host")
 
     # Tenta fallback para webhook genérico
-    return os.getenv("EASYPANEL_DEPLOY_WEBHOOK")
+    gen = os.getenv("EASYPANEL_DEPLOY_WEBHOOK")
+    if gen:
+        return gen.replace("http://179.197.77.183:3000", "https://khdya3.easypanel.host")
+    return None
 
 async def trigger_easypanel_deploy(service_name_or_url: str) -> str:
     """
@@ -54,6 +60,8 @@ async def trigger_easypanel_deploy(service_name_or_url: str) -> str:
 
     # 2. Resolve a URL do webhook
     webhook_url = _get_deploy_webhook(target)
+    if webhook_url and "179.197.77.183:3000" in webhook_url:
+        webhook_url = webhook_url.replace("http://179.197.77.183:3000", "https://khdya3.easypanel.host")
     if not webhook_url and service_name:
         # Tenta resolver dinamicamente via inspectService na API do Easypanel
         try:
