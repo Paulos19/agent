@@ -8,7 +8,12 @@ from .ssh_tool import execute_ssh_command
 from .github_tool import create_github_repository, push_project_to_github
 from .web_tool import search_and_read_documentation
 from .docker_tool import setup_docker_deployment
-from .easypanel_api import create_and_deploy_easypanel_app
+from .easypanel_api import (
+    create_and_deploy_easypanel_app,
+    ensure_service_has_domains,
+    get_service_domains,
+    add_service_domain
+)
 
 __all__ = [
     "execute_terminal_command",
@@ -31,5 +36,8 @@ __all__ = [
     "push_project_to_github",
     "search_and_read_documentation",
     "setup_docker_deployment",
-    "create_and_deploy_easypanel_app"
+    "create_and_deploy_easypanel_app",
+    "ensure_service_has_domains",
+    "get_service_domains",
+    "add_service_domain"
 ]

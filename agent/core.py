@@ -239,13 +239,13 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "trigger_easypanel_deploy",
-            "description": "Aciona o Build e Deploy automático de um projeto/serviço no Easypanel através do Deploy Webhook.",
+            "description": "Aciona o Build e Deploy automático de um projeto/serviço no Easypanel através do Deploy Webhook. Verifica e garante obrigatoriamente que o serviço possui domínios públicos apontados com SSL antes de acionar o deploy (impede deploy sem domínio).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "service_name_or_url": {
                         "type": "string",
-                        "description": "Nome do serviço no Easypanel (ex: 'phdev') ou a URL completa do Deploy Webhook copiada do Easypanel."
+                        "description": "Nome do serviço no Easypanel (ex: 'shiftsync') ou a URL completa do Deploy Webhook copiada do Easypanel."
                     }
                 },
                 "required": ["service_name_or_url"]
@@ -498,7 +498,7 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_and_deploy_easypanel_app",
-            "description": "Cria um novo serviço de aplicação no Easypanel, conecta o repositório GitHub, injeta variáveis de ambiente (.env), configura o domínio e inicia o build/deploy automaticamente.",
+            "description": "Cria um novo serviço de aplicação no Easypanel, conecta o repositório GitHub, injeta variáveis de ambiente (.env), cria e aponta obrigatoriamente os domínios públicos com SSL (Let's Encrypt), e só então inicia o build/deploy automaticamente (impede deploy sem domínio).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -525,7 +525,7 @@ AGENT_TOOLS = [
                     },
                     "domain": {
                         "type": "string",
-                        "description": "Opcional. Domínio público da aplicação (ex: 'portal.phdev.top')."
+                        "description": "Opcional. Domínio público customizado da aplicação (ex: 'portal.phdev.top'). Se omitido, os domínios padrão da VPS são criados automaticamente."
                     }
                 },
                 "required": ["project_name", "service_name", "git_repo"]
@@ -552,6 +552,7 @@ Capacidades de DevOps:
      b) Use 'git_commit_and_push' para commitar as alterações e subir para o GitHub.
      c) Acione 'trigger_easypanel_deploy' para o Easypanel rebuildar o container automaticamente.
      d) Avise o usuário no chat com o resumo das alterações e status do deploy.
+   - OBRIGATORIEDADE ABSOLUTA DE DOMÍNIO: Nenhum projeto ou serviço pode ser deployado sem domínio público apontado! Nossas ferramentas ('create_and_deploy_easypanel_app' e 'trigger_easypanel_deploy') verificam e garantem automaticamente que os domínios (ex: 'https://<servico>.khdya3.easypanel.host' e 'https://services-<servico>.khdya3.easypanel.host') estão ativos no Easypanel antes de disparar o deploy. Se não houver domínio apontado, o deploy é bloqueado.
 2. Controle do Host via SSH:
    - Use 'execute_ssh_command' para rodar comandos diretamente no sistema Linux da VPS (ex: 'docker ps', 'docker restart <container>', ver logs com 'docker logs', etc.).
 3. Regras de Roteamento (target):
@@ -576,7 +577,7 @@ Capacidades de DevOps:
       - A ferramenta 'create_and_deploy_easypanel_app' JÁ POSSUI TODAS AS CREDENCIAIS e API Key configuradas no servidor.
       - NUNCA peça ao usuário pela API Key, nem por webhook URL, nem peça para ele configurar manualmente no painel.
       - Chame SEMPRE 'create_and_deploy_easypanel_app(project_name="services", ...)' logo após o push do GitHub, passando o repositório, nome do serviço e as variáveis de ambiente necessárias.
-      - Forneça diretamente na resposta final a URL pública ativa gerada (ex: https://<servico>.khdya3.easypanel.host) para o usuário!
+      - Toda aplicação DEVE ter obrigatoriamente domínio apontado com SSL antes do build. Forneça diretamente na resposta final a URL pública ativa gerada (ex: https://<servico>.khdya3.easypanel.host) para o usuário!
 7. Personalidade e Estilo de Comunicação (MUITO IMPORTANTE):
    - Você é um Engenheiro DevOps & Tech Lead sênior parceiro ("camarada de trincheira"), extremamente competente, bem-humorado, calmo e seguro.
    - Comunicação: Informal, irreverente, descontraída e direta ao ponto (ex: "Fala meu consagrado!", "Tudo safo", "Fica sussa", "Deploy no capricho", "Segura a emoção que o container tá subindo").
