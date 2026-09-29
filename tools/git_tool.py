@@ -20,20 +20,46 @@ async def git_commit_and_push(
 ) -> str:
     """
     Executa o ciclo completo de Git: adiciona todas as alterações, faz o commit e envia (push) para o remoto.
+    Garante autenticação com token para evitar travamentos de prompt de credenciais.
     
     Args:
         repo_path: Caminho da pasta do repositório (ex: 'D:\\testes\\phdev' ou '.').
         message: Mensagem descritiva do commit.
         branch: Nome da branch de destino (padrão: 'main').
     """
-    # Escapa aspas na mensagem
+    from config import settings
+    token = settings.GITHUB_TOKEN or os.getenv("GITHUB_TOKEN", "")
     clean_message = message.replace('"', '\\"')
 
-    # Executa git add, commit e push em sequência
-    cmd = f'git add . && git commit -m "{clean_message}" && git push origin {branch}'
+    # Configurações do Git para evitar prompts interativos no Windows e Linux
+    commands = [
+        'git config user.name "Paulo Henrique"',
+        'git config user.email "paulohenrique.012araujo@gmail.com"',
+        'git config credential.helper ""',
+        'git add .',
+        f'git commit -m "{clean_message}" || echo "Sem novas alterações"'
+    ]
+
+    # Injeta token no remote origin se necessário para garantir push 100% autônomo
+    if token:
+        token_script = (
+            f'powershell -NoProfile -Command "'
+            f'try {{ '
+            f'  $url = git remote get-url origin 2>$null; '
+            f'  if ($url -and $url -match \'github\\.com\' -and -not ($url -match \'{token}\')) {{ '
+            f'    $authUrl = $url -replace \'https://(?:[^@]+@)?github\\.com\', \'https://{token}@github.com\'; '
+            f'    git remote set-url origin $authUrl '
+            f'  }} '
+            f'}} catch {{}}'
+            f'"'
+        )
+        commands.append(token_script)
+
+    commands.append(f'git push origin {branch}')
+    cmd = ' && '.join(commands)
     result = await execute_terminal_command(cmd, working_directory=repo_path, timeout=120)
     
-    if "[Exit Code]: 0" in result or "Everything up-to-date" in result or "branch" in result:
+    if "[Exit Code]: 0" in result or "Everything up-to-date" in result or "branch" in result or "-> main" in result:
         return f"✔ [GIT SUCESSO]: Alterações commitadas e enviadas para 'origin {branch}'!\n\n{result}"
     return f"⚠ [GIT ATENÇÃO]:\n{result}"
 
