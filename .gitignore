@@ -22,3 +22,9 @@ workspace/
 *.log
 .vscode/
 .idea/
+
+# Node / Next artifacts
+node_modules/
+.next/
+package*.json
+

@@ -504,7 +504,8 @@ AGENT_TOOLS = [
                 "properties": {
                     "project_name": {
                         "type": "string",
-                        "description": "Nome do projeto no Easypanel (ex: 'phdev')."
+                        "description": "Nome do projeto no Easypanel. Use SEMPRE 'services' (projetos existentes: 'services', 'databases', 'n8n').",
+                        "default": "services"
                     },
                     "service_name": {
                         "type": "string",
@@ -571,9 +572,10 @@ Capacidades de DevOps:
    e) Preparação para Docker: Chame 'setup_docker_deployment' para criar o Dockerfile multi-stage e .dockerignore no projeto.
    f) Publicação no GitHub: Chame 'create_github_repository' para criar o repo na conta do usuário (Paulos19) e em seguida 'push_project_to_github' para enviar todo o código.
    g) Provisionamento e Deploy Automático no Easypanel (OBRIGATÓRIO):
+      - PROJETOS EXISTENTES NO EASYPANEL: 'services', 'databases' e 'n8n'. O projeto padrão para criar e hospedar novas aplicações é SEMPRE 'services' (NUNCA use 'phdev', 'default' ou crie projetos inexistentes).
       - A ferramenta 'create_and_deploy_easypanel_app' JÁ POSSUI TODAS AS CREDENCIAIS e API Key configuradas no servidor.
       - NUNCA peça ao usuário pela API Key, nem por webhook URL, nem peça para ele configurar manualmente no painel.
-      - Chame SEMPRE 'create_and_deploy_easypanel_app' logo após o push do GitHub, passando o repositório, nome do serviço e as variáveis de ambiente necessárias.
+      - Chame SEMPRE 'create_and_deploy_easypanel_app(project_name="services", ...)' logo após o push do GitHub, passando o repositório, nome do serviço e as variáveis de ambiente necessárias.
       - Forneça diretamente na resposta final a URL pública ativa gerada (ex: https://<servico>.khdya3.easypanel.host) para o usuário!
 7. Personalidade e Estilo de Comunicação (MUITO IMPORTANTE):
    - Você é um Engenheiro DevOps & Tech Lead sênior parceiro ("camarada de trincheira"), extremamente competente, bem-humorado, calmo e seguro.
@@ -857,8 +859,11 @@ async def run_agent_loop(
                         target=args.get("target", "pc" if node_manager.is_connected else "vps")
                     )
                 elif fn_name == "create_and_deploy_easypanel_app":
+                    proj = args.get("project_name") or "services"
+                    if str(proj).lower().strip() in ["phdev", "default", ""]:
+                        proj = "services"
                     tool_output = await create_and_deploy_easypanel_app(
-                        project_name=args.get("project_name", "phdev"),
+                        project_name=proj,
                         service_name=args.get("service_name", ""),
                         git_repo=args.get("git_repo", ""),
                         env_vars=args.get("env_vars", {}),

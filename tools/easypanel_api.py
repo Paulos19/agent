@@ -36,9 +36,9 @@ async def _get_auth_token() -> Optional[str]:
     return None
 
 async def create_and_deploy_easypanel_app(
-    project_name: str,
-    service_name: str,
-    git_repo: str,
+    project_name: str = "services",
+    service_name: str = "",
+    git_repo: str = "",
     env_vars: Optional[Dict[str, str]] = None,
     branch: str = "main",
     domain: Optional[str] = None,
@@ -47,6 +47,8 @@ async def create_and_deploy_easypanel_app(
     """
     Cria uma nova aplicação no Easypanel, vincula o repositório GitHub, configura Dockerfile, define variáveis de ambiente, cria os domínios e dispara o deploy.
     """
+    if not project_name or project_name.lower().strip() in ["phdev", "default"]:
+        project_name = "services"
     token = await _get_auth_token()
     if not token:
         return (
