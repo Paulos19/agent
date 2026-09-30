@@ -1,55 +1,62 @@
-# Diretrizes de UI/UX e Design System com Mobbin MCP
+# Diretrizes de UI/UX, Design System e Pesquisa Autônoma de Referências
 
 Esta regra deve ser aplicada sempre que houver criação, reformulação ou formatação de interfaces de usuário (Web, Mobile, Dashboards, Landing Pages ou Componentes).
 
 ---
 
-## 1. Pesquisa e Benchmark Visual com Mobbin MCP
+## 1. Pesquisa Autônoma e Benchmark Visual de Elite
 
-Antes de gerar ou refatorar interfaces visuais, utilize o servidor Mobbin MCP para extrair referências de produtos de alto padrão do mercado (ex.: Stripe, Linear, Airbnb, Notion, Revolut, Vercel).
+Antes de gerar ou refatorar qualquer interface, o agente deve buscar referências ativas de produtos de padrão mundial (Linear, Stripe, Apple, Vercel, Supabase, Raycast):
 
-### Ferramentas a utilizar:
-- **`search_screens`**: Para telas individuais completas (ex.: dashboards analíticos, telas de login, páginas de perfil, configurações, tabelas de dados).
-- **`search_sections`**: Para seções modulares específicas (ex.: tabelas de preços/pricing, heros, rodapés, banners de conversão, modais de confirmação).
-- **`search_flows`**: Para jornadas completas com múltiplos passos (ex.: fluxo de onboarding, checkout em etapas, funil de assinatura, redefinição de credenciais).
-
-### Diretriz de Busca:
-- Realize buscas com termos em inglês detalhados (ex.: `"dark mode analytics dashboard"`, `"minimalist saas pricing cards"`, `"multi-step onboarding flow"`).
-- Se a busca falhar ou o Mobbin estiver offline/desconectado, utilize os princípios abaixo como guia absoluto de qualidade visual.
+### Fontes e Ferramentas:
+1. **Mobbin MCP / API**:
+   - `search_screens`, `search_sections`, `search_flows` (quando disponível plano pago).
+2. **Bibliotecas Open-Source de "Design Engineering" (Gratuitas e Abertas)**:
+   - **[Aceternity UI](https://ui.aceternity.com/)**: Referência para Bento Grids, Aurora Backgrounds, 3D Pin cards, Glowing Stars e Tabs dinâmicas.
+   - **[Magic UI](https://magicui.design/)**: Referência para Shimmer Buttons, Text effects, Particle trails e Landing pages modernas.
+   - **[21st.dev](https://21st.dev/)**: Componentes comunitários em Tailwind CSS + Motion de alta fidelidade.
+   - **[Godly Website](https://godly.website/)** e **[Lapa Ninja](https://www.lapa.ninja/)**: Galerias visuais gratuitas para layout, tipografia e espaçamento.
+3. **Mecanismo de Pesquisa Ativa**:
+   - Quando não houver Mobbin pago, a ferramenta `search_mobbin_screens` executa automaticamente buscas na web via DuckDuckGo em `ui.aceternity.com`, `magicui.design` e `21st.dev` para extrair receitas de código e padrões visuais atualizados.
 
 ---
 
-## 2. Princípios de Execução e Qualidade Visual (Anti-Genérico)
+## 2. Proatividade & Modo "Diretor Criativo"
+
+O agente não é apenas um executor passivo de HTML/CSS:
+- **Alinhamento Estético Inicial**: Ao receber uma solicitação de tela ou projeto, o agente formula uma direção criativa marcante (Arquétipo, paleta e componentes de destaque) e avisa ou sugere a estética para o usuário antes de começar a codificar.
+- **Sugestão de Componentes de Luxo**: Propõe ativamente a inclusão de elementos como:
+  - *Bento Grid* assimétrico com bordas translúcidas e glow no hover.
+  - *ThreeHeroScene* (Three.js 3D procedural gerado em código com orbe de vidro, malha física e partículas que reagem ao mouse).
+  - *FloatingGlassDock* (barra inferior flutuante em vidro fosco com ícones Lucide).
+  - *AuroraBackground* (efeito de luz ambiente dinâmico).
+  - *ShimmerButton* (botão CTA com borda de luz animada).
+
+---
+
+## 3. Princípios de Execução e Qualidade Visual (Anti-Genérico)
 
 ### A. Hierarquia e Tipografia
-- Nunca utilize fontes genéricas do sistema quando for possível aplicar fontes modernas (ex.: Inter, Outfit, Plus Jakarta Sans, Geist).
-- Estabeleça contraste nítido de hierarquia entre títulos (`h1`, `h2`), subtítulos, textos de apoio e rótulos auxiliares (muted text).
-- Mantenha tamanhos e line-heights harmoniosos com legibilidade impecável.
+- Use fontes sans-serif contemporâneas (Geist, Inter, Outfit, Plus Jakarta Sans) com tracking ajustado.
+- Contraste rígido de peso entre títulos display e subtítulos muted.
 
 ### B. Paleta de Cores e Superfícies
-- **Evite cores primárias brutas/puras** (como azul #0000FF ou verde puro). Utilize paletas semânticas bem equilibradas com variações de matiz e saturação cuidadosas.
+- **Evite cores primárias brutas ou puras**. Use paletas semânticas equilibradas.
 - Em **Dark Mode**:
-  - Evite preto absoluto (#000000) chapado em tudo; utilize camadas de profundidade (background profundo, cards ligeiramente elevados com superfícies em tons como `#12161f` ou `#181b22`).
-  - Aplique bordas sutis e translúcidas (ex.: `rgba(255, 255, 255, 0.08)` ou classes equivalentes `border-white/10`) para delimitar blocos visuais.
-  - Utilize efeitos sutis de vidro e blur (`backdrop-blur-md`, gradientes radiais suaves de iluminação de fundo).
+  - Camadas de profundidade: Fundo escuro profundo (`#090A0F`), cards ligeiramente elevados (`#11141D` ou `#161922`).
+  - Bordas sutis e translúcidas (`border-white/10` ou `rgba(255, 255, 255, 0.08)`).
+  - Vidro fosco e blur (`backdrop-blur-xl bg-neutral-950/60`).
 
-### C. Espaçamento e Ritmo Visual
-- Respeite uma escala proporcional consistente (múltiplos de 4px ou 8px).
-- Evite aglomeração de dados; garanta "respiro" entre seções e agrupamentos lógicos de conteúdo.
-- Agrupe elementos semanticamente relacionados dentro de cards, seções ou painéis bem definidos.
-
-### D. Estados de Interação e Microinterações
-Toda interface de excelência precisa parecer "viva" e responsiva:
-- **Hover & Active**: Feedback visual suave em botões, links e cards clicáveis (mudança sutil de luminosidade, borda acentuada ou leve transição de escala).
-- **Loading & Empty States**: Nunca deixe telas vazias sem contexto. Apresente ilustrações/ícones adequados, mensagem descritiva e botão de ação (CTA) para o próximo passo.
-- **Transições**: Animações de entrada e saída suaves (150ms a 300ms com curvas de desaceleração como `ease-out` ou `cubic-bezier`).
+### C. Microinterações e Motion (3 Camadas)
+1. **Entrada (Primária)**: Transições suaves em cascata com desaceleração.
+2. **Interação (Secundária)**: `hover:-translate-y-0.5`, `hover:border-white/20`, `active:scale-95`.
+3. **Ambiente (Terciária)**: Animações sutis contínuas em background (`animate-float`, `animate-pulse`, `animate-ping` nos badges de status).
 
 ---
 
-## 3. Fluxo de Trabalho do Agente
+## 4. Fluxo de Trabalho do Agente
 
-1. **Compreensão do Requisito**: Identificar os dados necessários, o objetivo do usuário e o tipo de interface.
-2. **Benchmark no Mobbin**: Executar `search_screens` ou `search_sections` para encontrar 2 a 3 referências de interfaces consagradas no mesmo domínio.
-3. **Mapeamento de Padrões**: Observar a disposição de controles, ações principais versus secundárias e feedback visual das referências.
-4. **Implementação de Código**: Construir os componentes com atenção aos detalhes de acabamento, acessibilidade e responsividade.
-5. **Revisão Visual**: Validar se o resultado transmite um aspecto profissional, moderno e refinado antes de finalizar.
+1. **Pesquisa Autônoma**: Executar `search_mobbin_screens(query="...")` para capturar referências na web e tokens do arquétipo.
+2. **Comunicação Proativa**: Informar o usuário sobre a escolha estética proposta.
+3. **Implementação de Excelência**: Criar os arquivos aplicando os templates de `agent/design_system.py`, cuidando de cada detalhe de espaçamento, responsividade e contraste.
+4. **Validação & Entrega**: Revisar se o visual transmite acabamento de produto mundial antes de finalizar.

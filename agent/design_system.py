@@ -272,3 +272,150 @@ MOTION_CSS_SNIPPET = """
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 """
+
+BENTO_GRID_TEMPLATE = '''"use client";
+
+import React from "react";
+import { Zap, ShieldCheck, Layers, BarChart3 } from "lucide-react";
+
+interface BentoItem {
+  title: string;
+  description: string;
+  header: React.ReactNode;
+  className?: string;
+  icon?: React.ReactNode;
+}
+
+export default function BentoGridDemo() {
+  const items: BentoItem[] = [
+    {
+      title: "Real-time Neural Engine",
+      description: "Autonomous models fine-tuned for millisecond decision execution.",
+      header: (
+        <div className="flex flex-1 w-full h-full min-h-[6rem] rounded-2xl bg-gradient-to-br from-violet-500/20 via-purple-500/5 to-transparent border border-white/10 p-4 flex items-center justify-center">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/20 border border-violet-400/30 text-violet-300 text-xs font-mono">
+            <span className="w-2 h-2 rounded-full bg-violet-400 animate-ping" />
+            99.98% Latency SLA
+          </div>
+        </div>
+      ),
+      className: "md:col-span-2",
+      icon: <Zap className="h-4 w-4 text-violet-400" />,
+    },
+    {
+      title: "Encrypted Vaults",
+      description: "Hardware security modules guard every secret in your cloud.",
+      header: (
+        <div className="flex flex-1 w-full h-full min-h-[6rem] rounded-2xl bg-gradient-to-br from-emerald-500/20 via-teal-500/5 to-transparent border border-white/10 p-4 flex items-center justify-center">
+          <ShieldCheck className="w-12 h-12 text-emerald-400/80" />
+        </div>
+      ),
+      className: "md:col-span-1",
+      icon: <ShieldCheck className="h-4 w-4 text-emerald-400" />,
+    },
+    {
+      title: "Multi-cluster Sync",
+      description: "Continuous deployments across global edge regions in one click.",
+      header: (
+        <div className="flex flex-1 w-full h-full min-h-[6rem] rounded-2xl bg-gradient-to-br from-cyan-500/20 via-blue-500/5 to-transparent border border-white/10 p-4 flex items-center justify-center">
+          <Layers className="w-12 h-12 text-cyan-400/80" />
+        </div>
+      ),
+      className: "md:col-span-1",
+      icon: <Layers className="h-4 w-4 text-cyan-400" />,
+    },
+    {
+      title: "Predictive Analytics",
+      description: "Forecast compute needs before traffic spikes hit production.",
+      header: (
+        <div className="flex flex-1 w-full h-full min-h-[6rem] rounded-2xl bg-gradient-to-br from-amber-500/20 via-orange-500/5 to-transparent border border-white/10 p-4 flex items-center justify-center">
+          <BarChart3 className="w-12 h-12 text-amber-400/80" />
+        </div>
+      ),
+      className: "md:col-span-2",
+      icon: <BarChart3 className="h-4 w-4 text-amber-400" />,
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-7xl mx-auto w-full">
+      {items.map((item, i) => (
+        <div
+          key={i}
+          className={`row-span-1 rounded-3xl group/bento hover:shadow-2xl transition duration-300 p-6 bg-neutral-950/60 backdrop-blur-xl border border-white/10 justify-between flex flex-col space-y-4 hover:border-white/20 hover:-translate-y-1 ${item.className || ""}`}
+        >
+          {item.header}
+          <div className="group-hover/bento:translate-x-1 transition duration-200">
+            <div className="flex items-center gap-2 mb-2">
+              {item.icon}
+              <h3 className="font-semibold text-neutral-100 text-base">{item.title}</h3>
+            </div>
+            <p className="font-normal text-neutral-400 text-xs leading-relaxed">{item.description}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+'''
+
+AURORA_BACKGROUND_TEMPLATE = '''"use client";
+
+import React from "react";
+
+interface AuroraBackgroundProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export default function AuroraBackground({ children, className = "" }: AuroraBackgroundProps) {
+  return (
+    <div className={`relative flex flex-col min-h-screen items-center justify-center bg-zinc-950 text-slate-100 overflow-hidden ${className}`}>
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div
+          className="
+            [--aurora:repeating-linear-gradient(100deg,#3b82f6_10%,#a855f7_15%,#06b6d4_20%,#ec4899_25%,#6366f1_30%)]
+            [background-image:var(--aurora)]
+            [background-size:300%,_200%]
+            filter blur-[80px]
+            opacity-35
+            animate-float
+            absolute -inset-[10px]
+          "
+        />
+      </div>
+      <div className="relative z-10 w-full flex flex-col items-center">{children}</div>
+    </div>
+  );
+}
+'''
+
+SHIMMER_BUTTON_TEMPLATE = '''"use client";
+
+import React from "react";
+import { ArrowRight } from "lucide-react";
+
+interface ShimmerButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  children: React.ReactNode;
+}
+
+export default function ShimmerButton({
+  children,
+  className = "",
+  ...props
+}: ShimmerButtonProps) {
+  return (
+    <button
+      className={`relative inline-flex items-center justify-center p-[1px] overflow-hidden rounded-full font-medium text-sm transition-all duration-300 active:scale-95 group shadow-[0_0_25px_rgba(168,85,247,0.35)] hover:shadow-[0_0_35px_rgba(168,85,247,0.6)] ${className}`}
+      {...props}
+    >
+      <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-400 animate-spin duration-3000 rounded-full" />
+      <span className="relative px-6 py-3 transition-all ease-out bg-neutral-950 text-white rounded-full flex items-center gap-2 group-hover:bg-neutral-900">
+        {children}
+        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+      </span>
+    </button>
+  );
+}
+'''
+
