@@ -28,7 +28,8 @@ from tools import (
     search_and_read_documentation,
     setup_docker_deployment,
     create_and_deploy_easypanel_app,
-    get_vps_env_var
+    get_vps_env_var,
+    search_mobbin_screens
 )
 
 # Inicializa o cliente OpenAI apontando para o provedor configurado (Gemini, 9Router, etc.)
@@ -548,6 +549,32 @@ AGENT_TOOLS = [
                 }
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_mobbin_screens",
+            "description": "Pesquisa referências visuais de UI/UX, telas reais e componentes de produtos consagrados no Mobbin e em nossa biblioteca de benchmarks de design (Linear, Stripe, Apple, Vercel, Supabase). Use sempre antes de criar ou refatorar interfaces frontend para garantir acabamento estético de altíssimo nível.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Descrição da tela ou componente (ex: 'modern dark mode SaaS dashboard with charts', 'subscription pricing cards', 'onboarding flow')."
+                    },
+                    "platform": {
+                        "type": "string",
+                        "enum": ["web", "ios"],
+                        "description": "Plataforma alvo: 'web' para aplicações web/desktop ou 'ios' para mobile. Padrão: 'web'."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Número máximo de referências a retornar (padrão: 5)."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
     }
 ]
 
@@ -656,6 +683,10 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
      * Camada 2 (Secundária): Micro-interações de feedback (hover:-translate-y-1, active:scale-95, group-hover:translate-x-1.5).
      * Camada 3 (Ambiente): Vida contínua em background (animações CSS keyframes @keyframes float e @keyframes glow, dots de status com animate-ping).
 
+   - CONSULTA OBRIGATÓRIA AO MOBBIN & BENCHMARK VISUAL:
+     * Sempre que o usuário pedir criação de nova interface, tela, página ou melhoria de design (UI/UX), EXECUTE 'search_mobbin_screens(query="...")' ANTES de criar os arquivos no PC!
+     * Utilize as referências, ritmo de espaçamento, superfícies e microinterações retornadas pelo Mobbin para fundamentar o layout.
+
    - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
      * Use sempre Tailwind CSS com utilities de backdrop-blur e gradientes sofisticados.
@@ -720,6 +751,12 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         if k:
             return (f"Consultando chave {k} no .env", f"🔑 Buscando a chave `{k}` no .env da VPS...")
         return ("Consultando chaves de ambiente na VPS", "🔑 Verificando variáveis e chaves reais no .env da VPS...")
+    elif fn_name == "search_mobbin_screens":
+        q = args.get("query", "design")
+        return (
+            f"Consultando referências no Mobbin ({q})",
+            f"🎨 Consultando referências visuais de alto padrão no Mobbin (`{q}`) para caprichar no design..."
+        )
     return (f"Executando {fn_name}", "")
 
 async def run_agent_loop(
@@ -951,6 +988,12 @@ async def run_agent_loop(
                     )
                 elif fn_name == "get_vps_env_var":
                     tool_output = await get_vps_env_var(key=args.get("key"))
+                elif fn_name == "search_mobbin_screens":
+                    tool_output = await search_mobbin_screens(
+                        query=args.get("query", ""),
+                        platform=args.get("platform", "web"),
+                        limit=args.get("limit", 5)
+                    )
                 else:
                     tool_output = f"[ERRO]: Ferramenta '{fn_name}' desconhecida."
             except Exception as tool_err:

@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     GITHUB_TOKEN: Optional[str] = None
     GITHUB_USERNAME: str = "Paulos19"
 
+    # UI/UX & Design Intelligence: Mobbin
+    MOBBIN_API_KEY: Optional[str] = Field(default=None, validation_alias=AliasChoices("MOBBIN_API_KEY", "MOBBIN_TOKEN"))
+
     @property
     def allowed_users_set(self) -> Set[str]:
         """Retorna uma lista limpa dos IDs e números autorizados com normalização de 9º dígito BR."""

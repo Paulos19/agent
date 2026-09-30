@@ -41,5 +41,9 @@ __all__ = [
     "create_and_deploy_easypanel_app",
     "ensure_service_has_domains",
     "get_service_domains",
-    "add_service_domain"
+    "add_service_domain",
+    "search_mobbin_screens"
 ]
+
+from .mobbin_tool import search_mobbin_screens
+
