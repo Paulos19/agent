@@ -149,6 +149,9 @@ async def worker_websocket(websocket: WebSocket, token: str = Query(...)):
 
         while True:
             data = await websocket.receive_json()
+            if data.get("type") == "ping":
+                await websocket.send_json({"type": "pong", "time": time.time()})
+                continue
             node_manager.handle_response(data)
     except WebSocketDisconnect:
         logger.info("[WebSocket] Worker do PC desconectou.")

@@ -22,6 +22,7 @@ if hasattr(sys.stderr, "reconfigure"):
 os.chdir(Path(__file__).parent.resolve())
 
 import re
+import time
 from datetime import datetime
 
 load_dotenv()
@@ -350,40 +351,62 @@ async def worker_loop():
     while True:
         try:
             log_print(f"[dim]Tentando conectar ao servidor WebSocket na VPS...[/dim]")
-            async with websockets.connect(ws_url, ping_interval=20, ping_timeout=20) as ws:
+            async with websockets.connect(ws_url, ping_interval=15, ping_timeout=15) as ws:
                 log_print(f"[bold green]✔ CONECTADO COM SUCESSO À VPS![/bold green] O agente agora tem controle total deste PC.")
                 
                 # Envia handshake com informações do PC
                 await ws.send(json.dumps({"type": "handshake", "info": system_info}))
 
-                while True:
-                    raw_msg = await ws.recv()
-                    data = json.loads(raw_msg)
-                    
-                    call_id = data.get("id")
-                    action = data.get("action")
-                    args = data.get("args", {})
+                # Heartbeat ativo a cada 12 segundos para manter o túnel do proxy (Traefik/Easypanel) sempre aquecido
+                async def _heartbeat():
+                    try:
+                        while True:
+                            await asyncio.sleep(12)
+                            await ws.send(json.dumps({"type": "ping", "time": time.time()}))
+                    except Exception:
+                        pass
 
-                    if not call_id or not action:
-                        continue
+                heartbeat_task = asyncio.create_task(_heartbeat())
 
-                    # Executa a ação passando ws e call_id para poder enviar mensagens de progresso
-                    result = await handle_action(action, args, ws=ws, call_id=call_id)
+                try:
+                    while True:
+                        try:
+                            raw_msg = await asyncio.wait_for(ws.recv(), timeout=35)
+                        except asyncio.TimeoutError:
+                            # Envia ping de conferência se passar 35s sem mensagens
+                            await ws.send(json.dumps({"type": "ping", "time": time.time()}))
+                            continue
 
-                    # Envia a resposta de volta à VPS
-                    response_payload = {
-                        "id": call_id,
-                        "status": "success",
-                        "result": result
-                    }
-                    await ws.send(json.dumps(response_payload))
+                        data = json.loads(raw_msg)
+                        if data.get("type") == "pong":
+                            continue
+                        
+                        call_id = data.get("id")
+                        action = data.get("action")
+                        args = data.get("args", {})
+
+                        if not call_id or not action:
+                            continue
+
+                        # Executa a ação passando ws e call_id para poder enviar mensagens de progresso
+                        result = await handle_action(action, args, ws=ws, call_id=call_id)
+
+                        # Envia a resposta de volta à VPS
+                        response_payload = {
+                            "id": call_id,
+                            "status": "success",
+                            "result": result
+                        }
+                        await ws.send(json.dumps(response_payload))
+                finally:
+                    heartbeat_task.cancel()
 
         except websockets.exceptions.ConnectionClosed:
-            log_print("[yellow]⚠ Conexão perdida com a VPS. Reconectando em 5 segundos...[/yellow]")
+            log_print("[yellow]⚠ Conexão perdida com a VPS. Reconectando em 3 segundos...[/yellow]")
         except Exception as e:
-            log_print(f"[red]❌ Erro de conexão: {str(e)}. Tentando novamente em 5 segundos...[/red]")
+            log_print(f"[red]❌ Erro de conexão: {str(e)}. Tentando novamente em 3 segundos...[/red]")
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(3)
 
 if __name__ == "__main__":
     try:
