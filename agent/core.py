@@ -29,7 +29,8 @@ from tools import (
     setup_docker_deployment,
     create_and_deploy_easypanel_app,
     get_vps_env_var,
-    search_mobbin_screens
+    search_mobbin_screens,
+    capture_and_analyze_design
 )
 
 # Inicializa o cliente OpenAI apontando para o provedor configurado (Gemini, 9Router, etc.)
@@ -575,6 +576,27 @@ AGENT_TOOLS = [
                 "required": ["query"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "capture_and_analyze_design",
+            "description": "Abre um navegador real headless (Playwright / Chromium / Edge), acessa qualquer site na internet (ex: https://ui.aceternity.com, https://godly.website, https://lapa.ninja, https://linear.app ou qualquer link enviado pelo usuário), tira um screenshot em alta definição e usa visão multimodal com IA para dissecar a paleta de cores (hex), tipografia, espaçamentos, sombras e componentes, gerando classes Tailwind CSS prontas para aplicar no código.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL completa do site ou página de referência visual para navegar, fotografar e dissecar (ex: 'https://ui.aceternity.com', 'https://linear.app')."
+                    },
+                    "focus": {
+                        "type": "string",
+                        "description": "Opcional. Foco específico da análise (ex: 'hero section e cards', 'botões e gradientes', 'bento grid e paleta de cores')."
+                    }
+                },
+                "required": ["url"]
+            }
+        }
     }
 ]
 
@@ -696,6 +718,10 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
           - 'SHIMMER_BUTTON_TEMPLATE': Para botões CTA com borda animada de luz.
        4. Na resposta final, apresente com orgulho as decisões visuais tomadas (paleta, tipografia, microinterações e componentes-chave).
 
+     * NAVEGADOR AUTOMATIZADO & CAPTURA VISUAL COM IA (PLAYWRIGHT + GEMINI VISION):
+       - Você possui a ferramenta 'capture_and_analyze_design(url="...", focus="...")' que abre um navegador real headless, acessa qualquer site na internet (Aceternity, Linear, Stripe, Vercel, Godly ou qualquer link que o usuário mandar), tira um screenshot e usa visão computacional para extrair cores, grids e componentes em Tailwind!
+       - Use 'capture_and_analyze_design' sempre que o usuário mandar uma URL de referência (ex: "faça algo no estilo desse site https://...") ou para clonar a estética de páginas premiadas.
+
    - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
      * Use sempre Tailwind CSS com utilities de backdrop-blur e gradientes sofisticados.
@@ -765,6 +791,12 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         return (
             f"Consultando referências no Mobbin ({q})",
             f"🎨 Consultando referências visuais de alto padrão no Mobbin (`{q}`) para caprichar no design..."
+        )
+    elif fn_name == "capture_and_analyze_design":
+        u = args.get("url", "site de referência")
+        return (
+            f"Capturando e analisando visual de {u}",
+            f"📸 Abrindo navegador headless, tirando print de `{u}` e dissecando a estética com visão multimodal..."
         )
     return (f"Executando {fn_name}", "")
 
@@ -1002,6 +1034,11 @@ async def run_agent_loop(
                         query=args.get("query", ""),
                         platform=args.get("platform", "web"),
                         limit=args.get("limit", 5)
+                    )
+                elif fn_name == "capture_and_analyze_design":
+                    tool_output = await capture_and_analyze_design(
+                        url=args.get("url", ""),
+                        focus=args.get("focus", "layout, cores e componentes de destaque")
                     )
                 else:
                     tool_output = f"[ERRO]: Ferramenta '{fn_name}' desconhecida."

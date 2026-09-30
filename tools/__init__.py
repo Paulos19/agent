@@ -42,8 +42,11 @@ __all__ = [
     "ensure_service_has_domains",
     "get_service_domains",
     "add_service_domain",
-    "search_mobbin_screens"
+    "search_mobbin_screens",
+    "capture_and_analyze_design"
 ]
 
 from .mobbin_tool import search_mobbin_screens
+from .visual_inspector import capture_and_analyze_design
+
 

@@ -28,3 +28,7 @@ node_modules/
 .next/
 package*.json
 
+# Scratch temporário
+scratch/
+
+
