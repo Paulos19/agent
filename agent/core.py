@@ -797,7 +797,8 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
 
      * EXTRAÇÃO DE VÍDEO E ÁUDIO DO YOUTUBE (ARMAZENAMENTO TEMPORÁRIO NA VPS - 48 HORAS):
        - Você possui a ferramenta nativa 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True, send_mode="link")'.
-       - O processamento NÃO é feito no PC local do usuário, e sim 100% na nuvem (VPS), com storage temporário em '/workspace/storage/temp_downloads/'.
+       - O processamento e armazenamento ocorrem 100% no storage temporário da VPS em '/workspace/storage/temp_downloads/'.
+       - PROIBIÇÃO ABSOLUTA: NUNCA execute comandos de terminal ('execute_terminal_command') para rodar yt-dlp ou salvar mídias na pasta Downloads do Windows (%USERPROFILE%/Downloads). Use SEMPRE E EXCLUSIVAMENTE a ferramenta 'download_youtube_media'. Ela gerencia internamente qualquer bypass antibot e garante que o arquivo fique na VPS com o link temporário de 48 horas.
        - Sempre que o usuário enviar um link do YouTube ou pedir para extrair áudio, converter em MP3, baixar vídeo ou disponibilizar download:
          1. Execute 'download_youtube_media' passando a URL do YouTube e o formato desejado ('mp3' para áudio ou 'mp4' para vídeo).
          2. A ferramenta extrai com yt-dlp e FFmpeg na VPS e gera um link temporário exclusivo com retenção de 48 horas (estilo Drive/WeTransfer).
@@ -1011,7 +1012,13 @@ async def run_agent_loop(
                     "git_pull"
                 ]
 
-                if target == "pc" and fn_name in pc_actions:
+                if fn_name == "execute_terminal_command" and any(k in args.get("command", "").lower() for k in ["yt-dlp", "youtube-dl"]):
+                    tool_output = (
+                        "[BLOQUEADO PELO SISTEMA]: É proibido baixar mídias do YouTube diretamente via comando de terminal no PC ou na VPS. "
+                        "Para extrair áudio ou vídeo, invoque OBRIGATORIAMENTE a ferramenta 'download_youtube_media(url=...)'. "
+                        "Ela gerencia o armazenamento na VPS e gera o link temporário de 48h para o usuário baixar no celular."
+                    )
+                elif target == "pc" and fn_name in pc_actions:
                     async def _pc_progress_forward(p_msg: str):
                         if on_step and p_msg:
                             try:
