@@ -419,3 +419,134 @@ export default function ShimmerButton({
 }
 '''
 
+# ==============================================================================
+# CANVAS UI INTEGRATION (https://canvasui.dev/ - Creative WebGL & WebGPU)
+# ==============================================================================
+CANVAS_UI_REGISTRY_COMPONENTS = {
+    "particle-reveal": "npx shadcn@latest add @canvas-ui/particle-reveal-react",
+    "force-field": "npx shadcn@latest add @canvas-ui/force-field-react",
+    "flame-wrap": "npx shadcn@latest add @canvas-ui/flame-wrap-react",
+    "glass-object": "npx shadcn@latest add @canvas-ui/glass-object-react",
+    "decrypt-reveal": "npx shadcn@latest add @canvas-ui/decrypt-reveal-react",
+    "glyph-rain": "npx shadcn@latest add @canvas-ui/glyph-rain-react",
+    "frost": "npx shadcn@latest add @canvas-ui/frost-react",
+    "bubble": "npx shadcn@latest add @canvas-ui/bubble-react",
+    "clouds": "npx shadcn@latest add @canvas-ui/clouds-react",
+    "grid": "npx shadcn@latest add @canvas-ui/grid-react",
+    "ascii-object": "npx shadcn@latest add @canvas-ui/ascii-object-react",
+    "liquid": "npx shadcn@latest add @canvas-ui/liquid-react"
+}
+
+# Template de Efeito de Partículas Interativas em Canvas Puro (Zero dependências adicionais)
+CANVAS_INTERACTIVE_PARTICLES_TEMPLATE = '''"use client";
+
+import React, { useEffect, useRef } from "react";
+
+interface CanvasParticlesProps {
+  particleCount?: number;
+  particleColor?: string;
+  lineColor?: string;
+  className?: string;
+}
+
+export default function CanvasInteractiveParticles({
+  particleCount = 50,
+  particleColor = "rgba(168, 85, 247, 0.7)",
+  lineColor = "rgba(168, 85, 247, 0.15)",
+  className = "",
+}: CanvasParticlesProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    let width = (canvas.width = canvas.parentElement?.clientWidth || window.innerWidth);
+    let height = (canvas.height = canvas.parentElement?.clientHeight || 500);
+
+    const onResize = () => {
+      if (!canvas) return;
+      width = canvas.width = canvas.parentElement?.clientWidth || window.innerWidth;
+      height = canvas.height = canvas.parentElement?.clientHeight || 500;
+    };
+    window.addEventListener("resize", onResize);
+
+    // Mouse tracker
+    const mouse = { x: -1000, y: -1000, radius: 120 };
+    const onMouseMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    };
+    window.addEventListener("mousemove", onMouseMove);
+
+    // Particles setup
+    const particles = Array.from({ length: particleCount }, () => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      vx: (Math.random() - 0.5) * 0.8,
+      vy: (Math.random() - 0.5) * 0.8,
+      size: Math.random() * 2 + 1,
+    }));
+
+    const render = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw and connect particles
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0 || p.x > width) p.vx *= -1;
+        if (p.y < 0 || p.y > height) p.vy *= -1;
+
+        // Interaction with mouse
+        const dx = mouse.x - p.x;
+        const dy = mouse.y - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < mouse.radius) {
+          const force = (mouse.radius - dist) / mouse.radius;
+          p.x -= (dx / dist) * force * 2;
+          p.y -= (dy / dist) * force * 2;
+        }
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = particleColor;
+        ctx.fill();
+
+        for (let j = i + 1; j < particles.length; j++) {
+          const p2 = particles[j];
+          const d2 = Math.hypot(p.x - p2.x, p.y - p2.y);
+          if (d2 < 110) {
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = 1 - d2 / 110;
+            ctx.stroke();
+          }
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("mousemove", onMouseMove);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [particleCount, particleColor, lineColor]);
+
+  return <canvas ref={canvasRef} className={`absolute inset-0 pointer-events-none z-0 ${className}`} />;
+}
+'''
+
+

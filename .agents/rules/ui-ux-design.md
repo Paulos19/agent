@@ -12,12 +12,15 @@ Antes de gerar ou refatorar qualquer interface, o agente deve buscar referência
 1. **Mobbin MCP / API**:
    - `search_screens`, `search_sections`, `search_flows` (quando disponível plano pago).
 2. **Bibliotecas Open-Source de "Design Engineering" (Gratuitas e Abertas)**:
+   - **[Canvas UI](https://canvasui.dev/)** ([GitHub](https://github.com/DavidHDev/canvas-ui)): Componentes WebGL/WebGPU criativos que rodam direto sobre HTML real compatíveis com shadcn (`npx shadcn@latest add @canvas-ui/<componente>-react`). Efeitos de ponta: `particle-reveal`, `force-field`, `flame-wrap`, `glass-object`, `decrypt-reveal`, `frost`, `ascii-object`, `liquid`.
    - **[Aceternity UI](https://ui.aceternity.com/)**: Referência para Bento Grids, Aurora Backgrounds, 3D Pin cards, Glowing Stars e Tabs dinâmicas.
    - **[Magic UI](https://magicui.design/)**: Referência para Shimmer Buttons, Text effects, Particle trails e Landing pages modernas.
    - **[21st.dev](https://21st.dev/)**: Componentes comunitários em Tailwind CSS + Motion de alta fidelidade.
    - **[Godly Website](https://godly.website/)** e **[Lapa Ninja](https://www.lapa.ninja/)**: Galerias visuais gratuitas para layout, tipografia e espaçamento.
-3. **Mecanismo de Pesquisa Ativa**:
-   - Quando não houver Mobbin pago, a ferramenta `search_mobbin_screens` executa automaticamente buscas na web via DuckDuckGo em `ui.aceternity.com`, `magicui.design` e `21st.dev` para extrair receitas de código e padrões visuais atualizados.
+3. **Mecanismo de Pesquisa Ativa & Navegador Invisível**:
+   - `search_mobbin_screens(query="...")`: Executa automaticamente buscas na web em `canvasui.dev`, `ui.aceternity.com`, `magicui.design` e `21st.dev` para extrair receitas de código e padrões visuais atualizados.
+   - `search_pinterest_and_analyze_ui(query="...", project_path="...")`: Abre navegador invisível (Playwright headless), pesquisa templates e boards de UI/UX no Pinterest, limpa overlays e capturas de tela e utiliza visão multimodal para dissecar o design e sugerir melhorias práticas no projeto do usuário!
+   - `capture_and_analyze_design(url="...", focus="...")`: Navega em qualquer site da web, captura screenshot e disseca classes Tailwind, paleta hex e componentes.
 
 ---
 
@@ -26,6 +29,8 @@ Antes de gerar ou refatorar qualquer interface, o agente deve buscar referência
 O agente não é apenas um executor passivo de HTML/CSS:
 - **Alinhamento Estético Inicial**: Ao receber uma solicitação de tela ou projeto, o agente formula uma direção criativa marcante (Arquétipo, paleta e componentes de destaque) e avisa ou sugere a estética para o usuário antes de começar a codificar.
 - **Sugestão de Componentes de Luxo**: Propõe ativamente a inclusão de elementos como:
+  - *Canvas UI Components* (`particle-reveal`, `force-field`, `flame-wrap`, `glass-object`, `decrypt-reveal`).
+  - *CanvasInteractiveParticles* (efeito de partículas 2D nativas que reagem ao mouse).
   - *Bento Grid* assimétrico com bordas translúcidas e glow no hover.
   - *ThreeHeroScene* (Three.js 3D procedural gerado em código com orbe de vidro, malha física e partículas que reagem ao mouse).
   - *FloatingGlassDock* (barra inferior flutuante em vidro fosco com ícones Lucide).
@@ -56,7 +61,7 @@ O agente não é apenas um executor passivo de HTML/CSS:
 
 ## 4. Fluxo de Trabalho do Agente
 
-1. **Pesquisa Autônoma**: Executar `search_mobbin_screens(query="...")` para capturar referências na web e tokens do arquétipo.
-2. **Comunicação Proativa**: Informar o usuário sobre a escolha estética proposta.
-3. **Implementação de Excelência**: Criar os arquivos aplicando os templates de `agent/design_system.py`, cuidando de cada detalhe de espaçamento, responsividade e contraste.
+1. **Pesquisa Autônoma**: Executar `search_mobbin_screens(query="...")` ou `search_pinterest_and_analyze_ui(query="...")` para capturar referências na web, pins no Pinterest e tokens do arquétipo.
+2. **Comunicação Proativa**: Informar o usuário sobre a escolha estética proposta via WhatsApp.
+3. **Implementação de Excelência**: Criar os arquivos aplicando os templates de `agent/design_system.py`, Canvas UI (`@canvas-ui/*`) e Tailwind CSS, cuidando de cada detalhe de espaçamento, responsividade e contraste.
 4. **Validação & Entrega**: Revisar se o visual transmite acabamento de produto mundial antes de finalizar.

@@ -30,7 +30,8 @@ from tools import (
     create_and_deploy_easypanel_app,
     get_vps_env_var,
     search_mobbin_screens,
-    capture_and_analyze_design
+    capture_and_analyze_design,
+    search_pinterest_and_analyze_ui
 )
 
 # Inicializa o cliente OpenAI apontando para o provedor configurado (Gemini, 9Router, etc.)
@@ -597,6 +598,27 @@ AGENT_TOOLS = [
                 "required": ["url"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_pinterest_and_analyze_ui",
+            "description": "Abre um navegador invisível (Playwright headless), pesquisa templates e inspirações visuais de UI/UX no Pinterest (ex: 'SaaS dashboard dark mode', 'Fintech mobile app UI', 'Landing page hero section 3D', 'Bento grid modern design'), captura um screenshot limpo em alta definição dos melhores pins e usa visão multimodal com IA para dissecar as referências e sugerir melhorias imediatas de UI no projeto do usuário.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Termo de busca no Pinterest (ex: 'SaaS modern dashboard UI', 'mobile app glassmorphism', 'e-commerce landing page dark mode', 'minimalist portfolio UI')."
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Opcional. Caminho da pasta do projeto do usuário para o assistente contextualizar e já sugerir como aplicar os templates encontrados diretamente nos arquivos do projeto."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
     }
 ]
 
@@ -708,7 +730,7 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
    - CONSULTORIA ATIVA DE DESIGN & PROATIVIDADE CRIATIVA ("DIRETOR DE ARTE AUTÔNOMO"):
      * NUNCA crie interfaces sem antes definir uma identidade visual marcante (padrão Awwwards / Linear / Stripe / Aceternity).
      * Sempre que o usuário pedir criação de nova interface, tela, página ou melhoria de design (UI/UX):
-       1. EXECUTE 'search_mobbin_screens(query="...")' ANTES de criar os arquivos no PC! Esta ferramenta pesquisa ao vivo na web referências em bibliotecas abertas de elite (Aceternity UI, Magic UI, 21st.dev, Mobbin) e extrai tokens de design.
+       1. EXECUTE 'search_mobbin_screens(query="...")' ou 'search_pinterest_and_analyze_ui(query="...", project_path="...")' ANTES de criar os arquivos no PC! Estas ferramentas pesquisam ao vivo referências em bibliotecas abertas de elite (Aceternity UI, Magic UI, 21st.dev, Mobbin) e dissecam templates no Pinterest via navegador headless com visão multimodal.
        2. Emita um aviso informal amigável no WhatsApp alinhando a direção estética adotada (ex: *"🎨 Fala meu consagrado! Vou aplicar o visual Cyber-Minimalismo & Dark Analytical SaaS com Bento Grid, cards de vidro fosco e microinterações no hover... Segura aí!"*).
        3. Incorpore componentes de elite prontos disponíveis em 'agent/design_system.py':
           - 'BENTO_GRID_TEMPLATE': Para dashboards e seções de recursos com layout assimétrico e glow.
@@ -716,11 +738,22 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
           - 'FLOATING_DOCK_TEMPLATE': Para barras de navegação modernas estilo macOS/Vision Pro.
           - 'AURORA_BACKGROUND_TEMPLATE': Para iluminação ambiente suave de fundo.
           - 'SHIMMER_BUTTON_TEMPLATE': Para botões CTA com borda animada de luz.
-       4. Na resposta final, apresente com orgulho as decisões visuais tomadas (paleta, tipografia, microinterações e componentes-chave).
+          - 'CANVAS_INTERACTIVE_PARTICLES_TEMPLATE': Efeito de partículas interativas que reagem ao mouse em canvas 2D nativo (sem dependências extras).
+       4. Integre a biblioteca CANVAS UI (https://canvasui.dev/ e https://github.com/DavidHDev/canvas-ui):
+          - Componentes WebGL e WebGPU criativos que rodam direto sobre HTML real compatíveis com shadcn!
+          - Instale via shadcn registry: 'npx shadcn@latest add @canvas-ui/<componente>-react'
+            * 'particle-reveal': Revela textos ou imagens através de um vórtice de partículas WebGL.
+            * 'force-field': Campo de força magnético que reage e repele ao passar do cursor.
+            * 'flame-wrap': Efeito de chamas energéticas envolvendo botões, cards ou badges.
+            * 'glass-object': Efeito de refração de vidro tridimensional sobre a interface.
+            * 'decrypt-reveal': Animação cibernética de descriptografia de dados e títulos.
+            * 'frost' / 'bubble' / 'liquid': Efeitos de condensação, bolhas e distorção líquida em tempo real.
+            * 'ascii-object': Renderização volumétrica em caracteres ASCII interativos.
+       5. Na resposta final, apresente com orgulho as decisões visuais tomadas (paleta, tipografia, microinterações, componentes Canvas UI e Three.js aplicados).
 
-     * NAVEGADOR AUTOMATIZADO & CAPTURA VISUAL COM IA (PLAYWRIGHT + GEMINI VISION):
-       - Você possui a ferramenta 'capture_and_analyze_design(url="...", focus="...")' que abre um navegador real headless, acessa qualquer site na internet (Aceternity, Linear, Stripe, Vercel, Godly ou qualquer link que o usuário mandar), tira um screenshot e usa visão computacional para extrair cores, grids e componentes em Tailwind!
-       - Use 'capture_and_analyze_design' sempre que o usuário mandar uma URL de referência (ex: "faça algo no estilo desse site https://...") ou para clonar a estética de páginas premiadas.
+     * NAVEGADOR AUTOMATIZADO & CAPTURA VISUAL COM IA (PLAYWRIGHT + VISÃO MULTIMODAL):
+       - 'capture_and_analyze_design(url="...", focus="...")': Abre navegador headless, acessa qualquer URL (Aceternity, Linear, Stripe, Godly ou link do usuário), tira screenshot e extrai cores, tipografia e classes Tailwind.
+       - 'search_pinterest_and_analyze_ui(query="...", project_path="...")': Abre navegador invisível, pesquisa templates e boards de UI/UX no Pinterest, remove popups/cookies, tira screenshot em alta definição dos melhores pins e usa visão multimodal para dissecar o design e sugerir melhorias práticas no projeto do usuário!
 
    - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
@@ -797,6 +830,12 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         return (
             f"Capturando e analisando visual de {u}",
             f"📸 Abrindo navegador headless, tirando print de `{u}` e dissecando a estética com visão multimodal..."
+        )
+    elif fn_name == "search_pinterest_and_analyze_ui":
+        q = args.get("query", "design")
+        return (
+            f"Buscando referências no Pinterest ({q})",
+            f"📌 Acessando o Pinterest em navegador invisível e dissecando templates de `{q}` com visão multimodal para turbinar a UI..."
         )
     return (f"Executando {fn_name}", "")
 
@@ -1039,6 +1078,11 @@ async def run_agent_loop(
                     tool_output = await capture_and_analyze_design(
                         url=args.get("url", ""),
                         focus=args.get("focus", "layout, cores e componentes de destaque")
+                    )
+                elif fn_name == "search_pinterest_and_analyze_ui":
+                    tool_output = await search_pinterest_and_analyze_ui(
+                        query=args.get("query", ""),
+                        project_path=args.get("project_path")
                     )
                 else:
                     tool_output = f"[ERRO]: Ferramenta '{fn_name}' desconhecida."

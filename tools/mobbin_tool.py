@@ -133,7 +133,7 @@ async def search_mobbin_screens(query: str, platform: str = "web", limit: int = 
     # Faz buscas simultâneas na web para coletar componentes reais
     web_references = []
     try:
-        search_terms = f"{clean_query} UI components site:ui.aceternity.com OR site:magicui.design OR site:21st.dev"
+        search_terms = f"{clean_query} UI components site:canvasui.dev OR site:ui.aceternity.com OR site:magicui.design OR site:21st.dev"
         web_results = await search_technical_docs(search_terms, max_results=3)
         if web_results and "ERRO" not in web_results and "Nenhum resultado" not in web_results:
             web_references.append(web_results)
@@ -153,7 +153,8 @@ async def search_mobbin_screens(query: str, platform: str = "web", limit: int = 
     ]
     
     if web_references:
-        result.append(f"🌐 *Referências Vivas Encontradas na Web (Aceternity / Magic UI / 21st.dev):*\n{web_references[0]}\n")
+        result.append(f"🌐 *Referências Vivas Encontradas na Web (Canvas UI / Aceternity / Magic UI / 21st.dev):*\n{web_references[0]}\n")
+
         
     result.extend([
         f"💬 *Proposta de Alinhamento para Sugerir ao Usuário (WhatsApp):*",
