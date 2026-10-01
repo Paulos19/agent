@@ -125,90 +125,98 @@ def _get_youtube_cookies() -> Optional[str]:
     return None
 
 def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict[str, Any]:
-    """Execução síncrona do yt-dlp com detecção de ffmpeg, cookies e bypass de clientes móveis."""
+    """Execução síncrona do yt-dlp com detecção de ffmpeg, clientes móveis e fallback de cookies."""
     ffmpeg_loc = _get_ffmpeg_location()
     out_template = str(out_dir / "%(title).200s.%(ext)s")
-    
-    ydl_opts: Dict[str, Any] = {
-        "outtmpl": out_template,
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "ios", "mweb"]
-            }
-        }
-    }
 
-    if ffmpeg_loc:
-        ydl_opts["ffmpeg_location"] = ffmpeg_loc
+    # Lista de estratégias de extração em ordem de resiliência:
+    # 1. Cliente Android nativo (alta velocidade, sem bloqueios de JS/cookies)
+    # 2. Cliente Android + iOS
+    # 3. Com arquivo de cookies (se disponível)
+    strategies = [
+        {"extractor_args": {"youtube": {"player_client": ["android"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["android", "ios"]}}},
+    ]
 
     cookies_file = _get_youtube_cookies()
     if cookies_file:
-        ydl_opts["cookiefile"] = cookies_file
+        strategies.append({"cookiefile": cookies_file})
 
-    if format_type.lower() == "mp3":
-        # Extração de áudio convertida para MP3
-        audio_quality = "320" if "320" in quality else ("128" if "128" in quality else "192")
-        ydl_opts.update({
-            "format": "bestaudio/best",
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": audio_quality,
-            }],
-        })
-    else:
-        # Extração de vídeo MP4 com melhor combinação de áudio e vídeo
-        ydl_opts.update({
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "merge_output_format": "mp4",
-        })
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        # O info retornado pode vir como lista se for playlist, pega o primeiro
-        if "entries" in info:
-            info = info["entries"][0]
-            
-        title = info.get("title", "video_extraido")
-        duration = info.get("duration", 0)
-        uploader = info.get("uploader", "Desconhecido")
-        view_count = info.get("view_count", 0)
-        webpage_url = info.get("webpage_url", url)
-
-        # Procura o arquivo gerado
-        expected_ext = "mp3" if format_type.lower() == "mp3" else "mp4"
-        downloaded_file = None
-        
-        # 1. Tenta pelo _filename do yt-dlp ajustando a extensão
-        if "_filename" in info:
-            cand = Path(info["_filename"]).with_suffix(f".{expected_ext}")
-            if cand.exists():
-                downloaded_file = cand
-
-        # 2. Busca o arquivo mais recente com a extensão no out_dir
-        if not downloaded_file:
-            candidates = sorted(out_dir.glob(f"*.{expected_ext}"), key=lambda f: f.stat().st_mtime, reverse=True)
-            if candidates:
-                downloaded_file = candidates[0]
-
-        if not downloaded_file or not downloaded_file.exists():
-            raise FileNotFoundError(f"Arquivo {expected_ext.upper()} não foi encontrado após o download.")
-
-        file_size = downloaded_file.stat().st_size
-        return {
-            "title": title,
-            "duration": duration,
-            "uploader": uploader,
-            "view_count": view_count,
-            "webpage_url": webpage_url,
-            "file_path": downloaded_file,
-            "file_name": downloaded_file.name,
-            "file_size": file_size,
-            "format": expected_ext.upper()
+    last_error = None
+    for strat in strategies:
+        ydl_opts: Dict[str, Any] = {
+            "outtmpl": out_template,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
         }
+        if ffmpeg_loc:
+            ydl_opts["ffmpeg_location"] = ffmpeg_loc
+        ydl_opts.update(strat)
+
+        if format_type.lower() == "mp3":
+            # Extração de áudio convertida para MP3
+            audio_quality = "320" if "320" in quality else ("128" if "128" in quality else "192")
+            ydl_opts.update({
+                "format": "bestaudio/best",
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": audio_quality,
+                }],
+            })
+        else:
+            # Extração de vídeo MP4 com melhor combinação de áudio e vídeo
+            ydl_opts.update({
+                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "merge_output_format": "mp4",
+            })
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if "entries" in info:
+                    info = info["entries"][0]
+
+                title = info.get("title", "video_extraido")
+                duration = info.get("duration", 0)
+                uploader = info.get("uploader", "Desconhecido")
+                view_count = info.get("view_count", 0)
+                webpage_url = info.get("webpage_url", url)
+
+                expected_ext = "mp3" if format_type.lower() == "mp3" else "mp4"
+                downloaded_file = None
+
+                if "_filename" in info:
+                    cand = Path(info["_filename"]).with_suffix(f".{expected_ext}")
+                    if cand.exists():
+                        downloaded_file = cand
+
+                if not downloaded_file:
+                    candidates = sorted(out_dir.glob(f"*.{expected_ext}"), key=lambda f: f.stat().st_mtime, reverse=True)
+                    if candidates:
+                        downloaded_file = candidates[0]
+
+                if downloaded_file and downloaded_file.exists():
+                    file_size = downloaded_file.stat().st_size
+                    return {
+                        "title": title,
+                        "duration": duration,
+                        "uploader": uploader,
+                        "view_count": view_count,
+                        "webpage_url": webpage_url,
+                        "file_path": downloaded_file,
+                        "file_name": downloaded_file.name,
+                        "file_size": file_size,
+                        "format": expected_ext.upper()
+                    }
+        except Exception as e:
+            last_error = e
+            continue
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Falha ao extrair vídeo em todas as estratégias.")
 
 from tools.temp_storage import register_temp_file, get_download_url, get_storage_dir
 
