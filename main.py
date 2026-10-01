@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header, WebSocket, WebSocketDisconnect, Query
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 
@@ -14,8 +15,11 @@ from agent.nodes import node_manager
 from channels import (
     extract_evolution_message,
     send_evolution_message,
+    send_evolution_media,
     extract_telegram_message,
-    send_telegram_message
+    send_telegram_message,
+    send_telegram_media,
+    send_channel_media
 )
 
 # Configuração de logs
@@ -50,6 +54,11 @@ async def lifespan(app: FastAPI):
     logger.info("Encerrando assistente...")
 
 app = FastAPI(title="Assistente CLI & DevOps Agent", lifespan=lifespan)
+
+# Servir arquivos de download diretamente via HTTP
+downloads_dir = settings.workspace_path / "downloads"
+downloads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/downloads", StaticFiles(directory=str(downloads_dir)), name="downloads")
 
 async def process_user_request(user_id: str, channel: str, prompt: str):
     """Executa a solicitação do usuário com suporte a streaming de progresso e concorrência."""

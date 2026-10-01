@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # Segurança & Acesso
     ALLOWED_USERS: str = ""
     WORKER_SECRET: str = Field(default="devops_secret_token_123", validation_alias=AliasChoices("WORKER_SECRET", "NODE_TOKEN"))
+    VPS_WS_URL: Optional[str] = Field(default="wss://agent.phdev.top/ws/worker", validation_alias=AliasChoices("VPS_WS_URL", "NODE_WS_URL"))
 
     # Diretório de trabalho padrão
     WORKSPACE_DIR: str = "./workspace"

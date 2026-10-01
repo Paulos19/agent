@@ -31,7 +31,8 @@ from tools import (
     get_vps_env_var,
     search_mobbin_screens,
     capture_and_analyze_design,
-    search_pinterest_and_analyze_ui
+    search_pinterest_and_analyze_ui,
+    download_youtube_media
 )
 
 # Inicializa o cliente OpenAI apontando para o provedor configurado (Gemini, 9Router, etc.)
@@ -619,6 +620,40 @@ AGENT_TOOLS = [
                 "required": ["query"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "download_youtube_media",
+            "description": "Extrai vídeo ou áudio do YouTube através do link fornecido, converte com FFmpeg embutido para MP3 (áudio de alta fidelidade) ou MP4 (vídeo com áudio integrado), salva o arquivo localmente, gera links diretos HTTP para download e despacha o arquivo de mídia/áudio diretamente no WhatsApp ou Telegram do usuário.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL do vídeo do YouTube (ex: 'https://www.youtube.com/watch?v=...', 'https://youtu.be/...', ou 'https://www.youtube.com/shorts/...')."
+                    },
+                    "format_type": {
+                        "type": "string",
+                        "enum": ["mp3", "mp4"],
+                        "description": "Formato de saída desejado: 'mp3' para extrair e converter somente o áudio em MP3, ou 'mp4' para baixar o vídeo completo com áudio."
+                    },
+                    "quality": {
+                        "type": "string",
+                        "description": "Qualidade desejada: para MP3 pode ser 'best', '320k', '192k', '128k'. Para MP4 pode ser 'best', '1080p', '720p'. Padrão: 'best'."
+                    },
+                    "destination_folder": {
+                        "type": "string",
+                        "description": "Opcional. Caminho de pasta personalizada para salvar o arquivo no PC. Se omitido, salva na pasta padrão de downloads."
+                    },
+                    "send_to_chat": {
+                        "type": "boolean",
+                        "description": "Se True (padrão), despacha o arquivo de áudio/vídeo diretamente para o chat do usuário no WhatsApp ou Telegram além de gerar os links de download."
+                    }
+                },
+                "required": ["url"]
+            }
+        }
     }
 ]
 
@@ -755,6 +790,13 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
        - 'capture_and_analyze_design(url="...", focus="...")': Abre navegador headless, acessa qualquer URL (Aceternity, Linear, Stripe, Godly ou link do usuário), tira screenshot e extrai cores, tipografia e classes Tailwind.
        - 'search_pinterest_and_analyze_ui(query="...", project_path="...")': Abre navegador invisível, pesquisa templates e boards de UI/UX no Pinterest, remove popups/cookies, tira screenshot em alta definição dos melhores pins e usa visão multimodal para dissecar o design e sugerir melhorias práticas no projeto do usuário!
 
+     * EXTRAÇÃO DE VÍDEO E ÁUDIO DO YOUTUBE (CONVERSÃO EM MP3 & DOWNLOAD NATIVO):
+       - Você possui a ferramenta nativa 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True)'.
+       - Sempre que o usuário enviar um link do YouTube ou pedir para extrair áudio, converter em MP3, baixar o vídeo ou disponibilizar arquivo para download:
+         1. Execute 'download_youtube_media' passando a URL do YouTube e o formato desejado ('mp3' para áudio ou 'mp4' para vídeo).
+         2. A ferramenta extrai com yt-dlp e FFmpeg embutido na melhor taxa de bits, salva em 'workspace/downloads', gera links diretos HTTP e envia o arquivo de áudio/vídeo diretamente para o WhatsApp ou Telegram do usuário!
+         3. Ao concluir, apresente o título, autor, duração, tamanho e os links diretos para download.
+
    - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
      * Use sempre Tailwind CSS com utilities de backdrop-blur e gradientes sofisticados.
@@ -836,6 +878,12 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         return (
             f"Buscando referências no Pinterest ({q})",
             f"📌 Acessando o Pinterest em navegador invisível e dissecando templates de `{q}` com visão multimodal para turbinar a UI..."
+        )
+    elif fn_name == "download_youtube_media":
+        fmt = args.get("format_type", "mp3").upper()
+        return (
+            f"Baixando e convertendo YouTube ({fmt})",
+            f"🎬 Baixando conteúdo do YouTube e convertendo em {fmt} de alta qualidade... Te envio o arquivo e o link em instantes! 🎧"
         )
     return (f"Executando {fn_name}", "")
 
@@ -1083,6 +1131,16 @@ async def run_agent_loop(
                     tool_output = await search_pinterest_and_analyze_ui(
                         query=args.get("query", ""),
                         project_path=args.get("project_path")
+                    )
+                elif fn_name == "download_youtube_media":
+                    tool_output = await download_youtube_media(
+                        url=args.get("url", ""),
+                        format_type=args.get("format_type", "mp3"),
+                        quality=args.get("quality", "best"),
+                        destination_folder=args.get("destination_folder"),
+                        send_to_chat=args.get("send_to_chat", True),
+                        user_id=user_id,
+                        channel=channel
                     )
                 else:
                     tool_output = f"[ERRO]: Ferramenta '{fn_name}' desconhecida."

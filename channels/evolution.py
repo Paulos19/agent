@@ -1,5 +1,8 @@
 import re
 import time
+import base64
+import mimetypes
+from pathlib import Path
 import httpx
 from typing import Optional, Tuple, Dict, Any, Set
 from config import settings
@@ -161,3 +164,76 @@ async def send_evolution_message(recipient: str, text: str) -> bool:
     except Exception as e:
         print(f"[Evolution API] Exceção ao enviar mensagem: {str(e)}")
         return False
+
+async def send_evolution_media(
+    recipient: str,
+    file_path: str,
+    caption: str = "",
+    media_type: str = "document",
+    file_name: Optional[str] = None
+) -> bool:
+    """
+    Envia um arquivo de mídia (áudio MP3, vídeo MP4 ou documento) pelo WhatsApp via Evolution API.
+    """
+    if not settings.EVOLUTION_API_URL or not settings.EVOLUTION_INSTANCE_NAME:
+        print("[Evolution API] Erro: URL da Evolution ou Nome da Instância não configurados.")
+        return False
+
+    p = Path(file_path)
+    if not p.exists():
+        print(f"[Evolution API] Arquivo não encontrado: {file_path}")
+        return False
+
+    file_size_mb = p.stat().st_size / (1024 * 1024)
+    if file_size_mb > 35.0:
+        print(f"[Evolution API] Arquivo muito grande para envio direto no WhatsApp ({file_size_mb:.1f}MB).")
+        return False
+
+    raw_data = p.read_bytes()
+    b64_data = base64.b64encode(raw_data).decode("utf-8")
+    actual_filename = file_name or p.name
+
+    # Determina mimetype apropriado
+    ext = p.suffix.lower()
+    if ext == ".mp3":
+        mime = "audio/mpeg"
+        if media_type not in ["audio", "document"]:
+            media_type = "audio"
+    elif ext == ".m4a":
+        mime = "audio/mp4"
+    elif ext == ".mp4":
+        mime = "video/mp4"
+        if media_type not in ["video", "document"]:
+            media_type = "video"
+    else:
+        mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
+
+    url = f"{settings.EVOLUTION_API_URL.rstrip('/')}/message/sendMedia/{settings.EVOLUTION_INSTANCE_NAME}"
+    headers = {
+        "Content-Type": "application/json",
+        "apikey": settings.EVOLUTION_API_KEY
+    }
+
+    number_target = recipient.split("@")[0] if "@" in recipient else recipient
+
+    payload = {
+        "number": number_target,
+        "mediatype": media_type,
+        "mimetype": mime,
+        "caption": format_whatsapp_message(caption) if caption else "",
+        "media": b64_data,
+        "fileName": actual_filename
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            if resp.status_code in [200, 201]:
+                return True
+            else:
+                print(f"[Evolution API] Falha no envio de mídia ({resp.status_code}): {resp.text}")
+                return False
+    except Exception as e:
+        print(f"[Evolution API] Exceção ao enviar mídia: {str(e)}")
+        return False
+
