@@ -316,6 +316,49 @@ git push origin {b}
             working_directory=repo_dir,
             timeout=120
         )
+    elif action == "download_youtube_media_local":
+        from tools.youtube_downloader import _run_yt_dlp
+        url = args.get("url")
+        fmt = args.get("format_type", "mp3")
+        qual = args.get("quality", "best")
+
+        await send_progress("🎵 Extraindo áudio no seu PC local (IP Residencial)...")
+        local_temp = Path(__file__).parent / "storage" / "temp_local"
+        local_temp.mkdir(parents=True, exist_ok=True)
+
+        try:
+            dl_result = await asyncio.to_thread(_run_yt_dlp, url, fmt, qual, local_temp)
+            if args.get("upload_to_vps"):
+                await send_progress("☁️ Enviando MP3 para a VPS para gerar o link de 48h...")
+                import httpx
+                vps_url = VPS_WS_URL or "wss://agent.phdev.top/ws/worker"
+                domain_match = re.search(r'wss?://([^/]+)', vps_url)
+                vps_host = domain_match.group(1) if domain_match else "agent.phdev.top"
+                upload_endpoint = f"https://{vps_host}/api/upload_temp?token={WORKER_SECRET}"
+
+                with open(dl_result["file_path"], "rb") as f:
+                    files = {"file": (dl_result["file_name"], f, "application/octet-stream")}
+                    async with httpx.AsyncClient(timeout=180.0) as client:
+                        resp = await client.post(upload_endpoint, files=files)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            dl_result["download_url"] = data["download_url"]
+                            dl_result["file_path"] = data["file_path"]
+                            dl_result["token"] = data["token"]
+                        else:
+                            raise RuntimeError(f"Erro ao subir arquivo para a VPS ({resp.status_code}): {resp.text}")
+
+                # Limpa arquivo temporário local para economizar espaço
+                try:
+                    p = Path(dl_result["file_path"])
+                    if p.exists():
+                        p.unlink()
+                except Exception:
+                    pass
+
+            res = json.dumps({"success": True, "result": dl_result}, default=str)
+        except Exception as e:
+            res = json.dumps({"success": False, "error": str(e)})
     else:
         res = f"[ERRO]: Ação local '{action}' desconhecida."
 

@@ -3,7 +3,7 @@ import time
 import logging
 from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header, WebSocket, WebSocketDisconnect, Query, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from pathlib import Path
@@ -192,6 +192,61 @@ async def download_temp_file(token: str, filename: Optional[str] = None):
             "Accept-Ranges": "bytes"
         }
     )
+
+@app.post("/api/upload_temp")
+async def upload_temp_file(
+    file: UploadFile = File(...),
+    token: str = Query(...)
+):
+    """
+    Endpoint para o worker local (PC) enviar arquivos gerados diretamente
+    para o storage temporário da VPS (/workspace/storage/temp_downloads).
+    """
+    if token != settings.WORKER_SECRET:
+        raise HTTPException(status_code=403, detail="Token inválido")
+
+    from tools.temp_storage import get_storage_dir, register_temp_file, get_download_url
+    storage_dir = get_storage_dir()
+    safe_filename = Path(file.filename).name
+    dest_path = storage_dir / safe_filename
+
+    # Salva o arquivo no storage
+    with open(dest_path, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            f.write(chunk)
+
+    record = register_temp_file(
+        file_path=dest_path,
+        filename=safe_filename,
+        metadata={"uploaded_by": "worker_pc"},
+        ttl_hours=48
+    )
+    download_link = get_download_url(record["token"])
+    return {
+        "status": "success",
+        "token": record["token"],
+        "download_url": download_link,
+        "file_path": str(dest_path),
+        "file_name": safe_filename,
+        "file_size": dest_path.stat().st_size
+    }
+
+@app.post("/api/upload_cookies")
+async def upload_cookies_file(
+    file: UploadFile = File(...),
+    token: str = Query(...)
+):
+    """Permite enviar o arquivo cookies.txt do YouTube diretamente para a VPS."""
+    if token != settings.WORKER_SECRET:
+        raise HTTPException(status_code=403, detail="Token inválido")
+
+    workspace = settings.workspace_path
+    dest = workspace / "cookies.txt"
+    content = await file.read()
+    with open(dest, "wb") as f:
+        f.write(content)
+
+    return {"status": "success", "message": "Arquivo cookies.txt salvo com sucesso no servidor!", "path": str(dest)}
 
 async def process_user_request(user_id: str, channel: str, prompt: str):
     """Executa a solicitação do usuário com suporte a streaming de progresso e concorrência."""

@@ -59,18 +59,94 @@ def _get_public_download_urls(filename: str) -> Dict[str, str]:
             
     return urls
 
+import shutil
+
+def _get_ffmpeg_location() -> Optional[str]:
+    """Descobre o executável ou diretório do ffmpeg com suporte a ffprobe."""
+    # 1. Verifica se ffmpeg e ffprobe estão no PATH do sistema
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        bin_dir = Path(sys_ffmpeg).parent
+        if (bin_dir / "ffprobe.exe").is_file() or (bin_dir / "ffprobe").is_file():
+            return str(bin_dir)
+
+    # 2. Verifica locais padrão do WinGet (Gyan.FFmpeg)
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
+    if local_app_data:
+        winget_pkgs = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages"
+        if winget_pkgs.exists():
+            for p in winget_pkgs.glob("Gyan.FFmpeg*/**/bin"):
+                if (p / "ffmpeg.exe").is_file() and (p / "ffprobe.exe").is_file():
+                    return str(p)
+
+    # 3. Verifica PATH atualizado do Registro do Windows
+    try:
+        import winreg
+        for root in [winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE]:
+            sub = r"Environment" if root == winreg.HKEY_CURRENT_USER else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+            try:
+                with winreg.OpenKey(root, sub) as key:
+                    path_val, _ = winreg.QueryValueEx(key, "Path")
+                    for part in path_val.split(";"):
+                        p = Path(part.strip())
+                        if (p / "ffmpeg.exe").is_file() and (p / "ffprobe.exe").is_file():
+                            return str(p)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 4. Linux nativo (/usr/bin)
+    if Path("/usr/bin/ffmpeg").is_file() and Path("/usr/bin/ffprobe").is_file():
+        return "/usr/bin"
+
+    # 5. Fallback para imageio_ffmpeg
+    try:
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and Path(exe).is_file():
+            return str(Path(exe).parent)
+    except Exception:
+        pass
+    return None
+
+def _get_youtube_cookies() -> Optional[str]:
+    """Localiza arquivo de cookies do YouTube para contornar bloqueios de bots em datacenter."""
+    candidates = [
+        os.getenv("YOUTUBE_COOKIES_PATH"),
+        Path("/workspace/cookies.txt"),
+        Path("/workspace/storage/cookies.txt"),
+        Path(__file__).parent.parent / "cookies.txt",
+        Path(__file__).parent / "cookies.txt",
+        Path.cwd() / "cookies.txt"
+    ]
+    for c in candidates:
+        if c and Path(c).is_file() and Path(c).stat().st_size > 0:
+            return str(Path(c).resolve())
+    return None
+
 def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict[str, Any]:
-    """Execução síncrona do yt-dlp em thread separada com binário ffmpeg embutido."""
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    """Execução síncrona do yt-dlp com detecção de ffmpeg, cookies e bypass de clientes móveis."""
+    ffmpeg_loc = _get_ffmpeg_location()
     out_template = str(out_dir / "%(title).200s.%(ext)s")
     
     ydl_opts: Dict[str, Any] = {
         "outtmpl": out_template,
-        "ffmpeg_location": ffmpeg_exe,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "mweb"]
+            }
+        }
     }
+
+    if ffmpeg_loc:
+        ydl_opts["ffmpeg_location"] = ffmpeg_loc
+
+    cookies_file = _get_youtube_cookies()
+    if cookies_file:
+        ydl_opts["cookiefile"] = cookies_file
 
     if format_type.lower() == "mp3":
         # Extração de áudio convertida para MP3
@@ -162,11 +238,56 @@ async def download_youtube_media(
         out_dir = get_storage_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    result = None
     try:
         # Executa o download em thread separada para não bloquear o loop de eventos
         result = await asyncio.to_thread(_run_yt_dlp, clean_url, format_type, quality, out_dir)
     except Exception as e:
-        return f"[ERRO AO EXTRAIR DO YOUTUBE]: {str(e)}"
+        err_str = str(e)
+        from agent.nodes import node_manager
+        # Se for bloqueio antibot e o worker do PC estiver online, tenta delegar para o IP residencial do PC
+        is_bot_block = any(k in err_str.lower() for k in ["not a bot", "sign in", "bot", "403", "forbidden"])
+        if is_bot_block and node_manager.is_connected:
+            try:
+                import json
+                pc_res = await node_manager.execute_on_pc("download_youtube_media_local", {
+                    "url": clean_url,
+                    "format_type": format_type,
+                    "quality": quality,
+                    "upload_to_vps": True
+                })
+                if isinstance(pc_res, str):
+                    try:
+                        res_data = json.loads(pc_res)
+                    except Exception:
+                        res_data = {}
+                    if res_data.get("success"):
+                        result = res_data["result"]
+                        result["file_path"] = Path(result["file_path"])
+                    else:
+                        raise RuntimeError(res_data.get("error", pc_res))
+                else:
+                    raise RuntimeError(f"Resposta inesperada do PC: {pc_res}")
+            except Exception as pc_err:
+                return (
+                    f"⚠️ *Bloqueio Antibot do YouTube no Servidor!*\n\n"
+                    f"O YouTube bloqueou o IP do servidor em nuvem (Easypanel/Datacenter) exigindo autenticação.\n"
+                    f"Tentativa de contorno pelo PC local falhou com: `{pc_err}`\n\n"
+                    f"💡 *Solução Definitiva:* Exporte seus cookies do YouTube usando a extensão *Get cookies.txt LOCALLY* "
+                    f"e coloque no servidor como `cookies.txt`."
+                )
+        else:
+            if is_bot_block:
+                return (
+                    f"⚠️ *Bloqueio Antibot do YouTube no Servidor!*\n\n"
+                    f"O YouTube identificou o IP do datacenter da VPS e solicitou confirmação de login (`Sign in to confirm you're not a bot`).\n\n"
+                    f"💡 *Como resolver de forma definitiva:*\n"
+                    f"1. Instale a extensão *Get cookies.txt LOCALLY* no Chrome/Firefox.\n"
+                    f"2. Acesse o YouTube logado e exporte o arquivo `cookies.txt`.\n"
+                    f"3. Coloque o `cookies.txt` na pasta `/workspace/cookies.txt` da VPS (ou envie no chat).\n"
+                    f"4. Ou mantenha o script `worker.py` rodando no seu PC local para o assistente usar sua internet residencial automaticamente!"
+                )
+            return f"[ERRO AO EXTRAIR DO YOUTUBE]: {err_str}"
 
     file_path = result["file_path"]
     file_name = result["file_name"]
