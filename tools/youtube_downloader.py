@@ -125,13 +125,14 @@ async def download_youtube_media(
     quality: str = "best",
     destination_folder: Optional[str] = None,
     send_to_chat: bool = True,
+    send_mode: str = "both",
     user_id: Optional[str] = None,
     channel: Optional[str] = "whatsapp"
 ) -> str:
     """
     Baixa vídeo ou áudio do YouTube por meio da URL, converte para MP3 (ou MP4)
-    em alta qualidade e gera links para download além de enviar o arquivo de mídia
-    direto para o usuário via WhatsApp ou Telegram.
+    em alta qualidade, gera links para download e envia o arquivo como DOCUMENTO
+    para salvar na memória do celular/abrir em tocadores nativos e/ou como PLAYER no chat.
     """
     clean_url = url.strip()
     if not clean_url.startswith("http"):
@@ -167,23 +168,54 @@ async def download_youtube_media(
     # Envio direto para o WhatsApp/Telegram
     sent_media_status = "Não solicitado."
     if send_to_chat and user_id:
-        caption = f"🎵 *{title}*\nCanal: {uploader} | Duração: {duration_formatted} | Tamanho: {file_size_formatted}"
-        media_type = "audio" if fmt == "MP3" else "video"
-        try:
-            ok = await send_channel_media(
-                recipient=user_id,
-                channel=channel or "whatsapp",
-                file_path=str(file_path),
-                caption=caption,
-                media_type=media_type,
-                file_name=file_name
+        ch = channel or "whatsapp"
+        results_sent = []
+
+        # 1. Envio como DOCUMENTO: permite ao usuário salvar diretamente no armazenamento do celular
+        # (Download/WhatsApp Documents), abrir em players nativos (Spotify, Apple Music, VLC, Samsung Music)
+        # e compartilhar/encaminhar nativamente como arquivo real .mp3 ou .mp4.
+        if send_mode in ["document", "both"]:
+            doc_caption = (
+                f"📁 *{title}*\n"
+                f"👤 Canal: {uploader} | ⏱️ {duration_formatted} | 📦 {file_size_formatted}\n"
+                f"_Toque no arquivo para salvar no celular e escutar em qualquer app de música/vídeo._"
             )
-            if ok:
-                sent_media_status = f"✅ Arquivo {fmt} enviado diretamente no seu {channel.capitalize()} com sucesso!"
-            else:
-                sent_media_status = "⚠️ Não foi possível despachar o arquivo via chat (possível limite de tamanho), mas o link de download está disponível."
-        except Exception as send_err:
-            sent_media_status = f"⚠️ Erro ao enviar para o chat: {send_err}"
+            try:
+                ok_doc = await send_channel_media(
+                    recipient=user_id,
+                    channel=ch,
+                    file_path=str(file_path),
+                    caption=doc_caption,
+                    media_type="document",
+                    file_name=file_name
+                )
+                if ok_doc:
+                    results_sent.append("📁 Arquivo para salvar no aparelho")
+            except Exception:
+                pass
+
+        # 2. Envio como PLAYER DE CHAT: permite ouvir imediatamente no próprio chat do WhatsApp/Telegram
+        if send_mode in ["chat_player", "both"]:
+            chat_type = "audio" if fmt == "MP3" else "video"
+            chat_caption = f"🎧 *{title}* (Player no Chat)"
+            try:
+                ok_player = await send_channel_media(
+                    recipient=user_id,
+                    channel=ch,
+                    file_path=str(file_path),
+                    caption=chat_caption,
+                    media_type=chat_type,
+                    file_name=file_name
+                )
+                if ok_player:
+                    results_sent.append("🎧 Player no chat")
+            except Exception:
+                pass
+
+        if results_sent:
+            sent_media_status = f"✅ {' e '.join(results_sent)} entregue(s) no seu {ch.capitalize()} com sucesso!"
+        else:
+            sent_media_status = "⚠️ Não foi possível despachar o arquivo via chat (possível limite de tamanho), mas os links diretos de download estão disponíveis abaixo."
 
     response = (
         f"🎬 *Extração do YouTube Concluída com Sucesso!*\n\n"

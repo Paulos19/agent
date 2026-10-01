@@ -649,6 +649,11 @@ AGENT_TOOLS = [
                     "send_to_chat": {
                         "type": "boolean",
                         "description": "Se True (padrão), despacha o arquivo de áudio/vídeo diretamente para o chat do usuário no WhatsApp ou Telegram além de gerar os links de download."
+                    },
+                    "send_mode": {
+                        "type": "string",
+                        "enum": ["both", "document", "chat_player"],
+                        "description": "Modo de envio para o WhatsApp/Telegram: 'both' (padrão) envia como DOCUMENTO (salva no armazenamento do celular, abre em apps nativos de música/vídeo e permite compartilhar) E como player no chat; 'document' envia apenas o arquivo para salvar no celular; 'chat_player' envia apenas como player no chat."
                     }
                 },
                 "required": ["url"]
@@ -794,8 +799,9 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
        - Você possui a ferramenta nativa 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True)'.
        - Sempre que o usuário enviar um link do YouTube ou pedir para extrair áudio, converter em MP3, baixar o vídeo ou disponibilizar arquivo para download:
          1. Execute 'download_youtube_media' passando a URL do YouTube e o formato desejado ('mp3' para áudio ou 'mp4' para vídeo).
-         2. A ferramenta extrai com yt-dlp e FFmpeg embutido na melhor taxa de bits, salva em 'workspace/downloads', gera links diretos HTTP e envia o arquivo de áudio/vídeo diretamente para o WhatsApp ou Telegram do usuário!
-         3. Ao concluir, apresente o título, autor, duração, tamanho e os links diretos para download.
+         2. A ferramenta extrai com yt-dlp e FFmpeg embutido na melhor taxa de bits, salva em 'workspace/downloads' e gera links diretos HTTP.
+         3. No WhatsApp/Telegram, ela envia o arquivo como DOCUMENTO baixável (para o arquivo ficar salvo no armazenamento do celular, poder ser escutado em tocadores nativos de música/vídeo e ser compartilhado/encaminhado com facilidade) e também como player direto no chat!
+         4. Ao concluir, apresente o título, autor, duração, tamanho e os links diretos para download.
 
    - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
@@ -1139,6 +1145,7 @@ async def run_agent_loop(
                         quality=args.get("quality", "best"),
                         destination_folder=args.get("destination_folder"),
                         send_to_chat=args.get("send_to_chat", True),
+                        send_mode=args.get("send_mode", "both"),
                         user_id=user_id,
                         channel=channel
                     )
