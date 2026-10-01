@@ -31,4 +31,13 @@ package*.json
 # Scratch temporário
 scratch/
 
+# Cookies e Credenciais de Sessão (CRÍTICO: nunca expor cookies no GitHub)
+*cookie*
+*.b64
+part*.txt
+chunk*.txt
+yt_b64.txt
+storage/
+temp_*/
+
 
