@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tar \
     gzip \
     unzip \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Diretório da aplicação
@@ -23,8 +24,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia o código da aplicação
 COPY . .
 
-# Cria o diretório de workspace padrão
-RUN mkdir -p /workspace
+# Cria os diretórios de workspace e storage temporário
+RUN mkdir -p /workspace/storage/temp_downloads
 
 # Define variáveis de ambiente padrão
 ENV PYTHONUNBUFFERED=1

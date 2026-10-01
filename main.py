@@ -5,7 +5,8 @@ from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from pathlib import Path
 import urllib.parse
 import re
 import mimetypes
@@ -49,6 +50,24 @@ async def handle_scheduled_job(user_id: str, channel: str, prompt: str):
 async def lifespan(app: FastAPI):
     # Inicialização do agendador
     init_scheduler(handle_scheduled_job)
+    
+    # Limpeza e agendamento de storage temporário (48 horas)
+    try:
+        from tools.temp_storage import cleanup_expired_files
+        from tools.scheduler import scheduler
+        from apscheduler.triggers.interval import IntervalTrigger
+        cleaned = cleanup_expired_files()
+        if cleaned:
+            logger.info(f"[TempStorage] {cleaned} arquivo(s) temporário(s) expirado(s) removido(s) na inicialização.")
+        scheduler.add_job(
+            cleanup_expired_files,
+            trigger=IntervalTrigger(hours=1),
+            id="cleanup_temp_storage_job",
+            replace_existing=True
+        )
+    except Exception as e:
+        logger.error(f"[TempStorage] Erro ao configurar limpeza de storage temporário: {e}")
+
     logger.info("====================================================")
     logger.info("   Assistente CLI / DevOps Agent Inicializado!      ")
     logger.info(f"   Workspace: {settings.workspace_path}")
@@ -96,6 +115,72 @@ async def download_file_direct(filename: str):
     # RFC 5987 / 6266 encoding para cabeçalho de download
     safe_ascii_name = re.sub(r'[^\w\s\.-]', '_', file_path.name)
     quoted_name = urllib.parse.quote(file_path.name)
+    content_disposition = f'attachment; filename="{safe_ascii_name}"; filename*=UTF-8\'\'{quoted_name}'
+
+    return FileResponse(
+        path=str(file_path),
+        media_type=mime,
+        headers={
+            "Content-Disposition": content_disposition,
+            "Cache-Control": "public, max-age=3600",
+            "Accept-Ranges": "bytes"
+        }
+    )
+
+@app.get("/d/{token}")
+@app.get("/d/{token}/{filename}")
+async def download_temp_file(token: str, filename: Optional[str] = None):
+    """
+    Download de arquivo temporário de 48 horas estilo Drive / WeTransfer.
+    Verifica se o token é válido e não expirou.
+    Força o download direto para a pasta de Downloads do dispositivo (Android/iOS/PC).
+    """
+    from tools.temp_storage import get_temp_file
+    record = get_temp_file(token)
+    if not record:
+        html_expired = """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Link Expirado</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #090a0f; color: #ededed; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #12141c; border: 1px solid #272a38; border-radius: 20px; padding: 36px; max-width: 440px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+    .icon { font-size: 52px; margin-bottom: 20px; }
+    h1 { font-size: 22px; margin: 0 0 12px 0; color: #f4f4f5; font-weight: 700; }
+    p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
+    .badge { display: inline-block; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 6px 14px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⏳</div>
+    <h1>Link Expirado</h1>
+    <p>Este arquivo foi removido permanentemente após o período de <strong>48 horas</strong> por motivos de privacidade e economia de espaço no servidor.</p>
+    <div class="badge">Retenção de 48h Expirada</div>
+  </div>
+</body>
+</html>"""
+        return HTMLResponse(content=html_expired, status_code=410)
+
+    file_path = Path(record["file_path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Arquivo físico não encontrado no storage.")
+
+    actual_filename = record.get("filename", file_path.name)
+    ext = file_path.suffix.lower()
+    if ext == ".mp3":
+        mime = "audio/mpeg"
+    elif ext == ".mp4":
+        mime = "video/mp4"
+    elif ext == ".m4a":
+        mime = "audio/mp4"
+    else:
+        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+
+    safe_ascii_name = re.sub(r'[^\w\s\.-]', '_', actual_filename)
+    quoted_name = urllib.parse.quote(actual_filename)
     content_disposition = f'attachment; filename="{safe_ascii_name}"; filename*=UTF-8\'\'{quoted_name}'
 
     return FileResponse(

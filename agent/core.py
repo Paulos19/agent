@@ -625,7 +625,7 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "download_youtube_media",
-            "description": "Extrai vídeo ou áudio do YouTube através do link fornecido, converte com FFmpeg embutido para MP3 (áudio de alta fidelidade) ou MP4 (vídeo com áudio integrado), salva o arquivo localmente, gera links diretos HTTP para download e despacha o arquivo de mídia/áudio diretamente no WhatsApp ou Telegram do usuário.",
+            "description": "Extrai vídeo ou áudio do YouTube através do link fornecido, converte com FFmpeg na nuvem (VPS) para MP3 (áudio de alta fidelidade) ou MP4 (vídeo com áudio integrado), armazena no storage temporário da VPS com validade de 48 horas (estilo Drive/WeTransfer) e gera um link temporário exclusivo para download direto no celular ou PC.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -795,14 +795,15 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
        - 'capture_and_analyze_design(url="...", focus="...")': Abre navegador headless, acessa qualquer URL (Aceternity, Linear, Stripe, Godly ou link do usuário), tira screenshot e extrai cores, tipografia e classes Tailwind.
        - 'search_pinterest_and_analyze_ui(query="...", project_path="...")': Abre navegador invisível, pesquisa templates e boards de UI/UX no Pinterest, remove popups/cookies, tira screenshot em alta definição dos melhores pins e usa visão multimodal para dissecar o design e sugerir melhorias práticas no projeto do usuário!
 
-     * EXTRAÇÃO DE VÍDEO E ÁUDIO DO YOUTUBE (CONVERSÃO EM MP3 & DOWNLOAD NATIVO):
-       - Você possui a ferramenta nativa 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True)'.
-       - Sempre que o usuário enviar um link do YouTube ou pedir para extrair áudio, converter em MP3, baixar o vídeo ou disponibilizar arquivo para download:
+     * EXTRAÇÃO DE VÍDEO E ÁUDIO DO YOUTUBE (ARMAZENAMENTO TEMPORÁRIO NA VPS - 48 HORAS):
+       - Você possui a ferramenta nativa 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True, send_mode="link")'.
+       - O processamento NÃO é feito no PC local do usuário, e sim 100% na nuvem (VPS), com storage temporário em '/workspace/storage/temp_downloads/'.
+       - Sempre que o usuário enviar um link do YouTube ou pedir para extrair áudio, converter em MP3, baixar vídeo ou disponibilizar download:
          1. Execute 'download_youtube_media' passando a URL do YouTube e o formato desejado ('mp3' para áudio ou 'mp4' para vídeo).
-         2. A ferramenta extrai com yt-dlp e FFmpeg embutido na melhor taxa de bits e salva em 'workspace/downloads'.
-         3. A entrega padrão é via LINK DIRETO ('send_mode="link"'): ao tocar no link no WhatsApp/Telegram, o smartphone faz o download oficial para a pasta Download do sistema, fazendo com que os aplicativos de música (Samsung Music, Xiaomi, VLC, etc.) reconheçam o arquivo imediatamente no aparelho, sem travar na pasta interna do WhatsApp.
-         4. Se o usuário pedir especificamente player no chat ou arquivo anexado, use send_mode="chat_player", "document" ou "both".
-         5. Ao concluir, apresente o título, autor, duração, tamanho e o link direto de download destacado com instruções amigáveis.
+         2. A ferramenta extrai com yt-dlp e FFmpeg na VPS e gera um link temporário exclusivo com retenção de 48 horas (estilo Drive/WeTransfer).
+         3. A entrega padrão é via LINK DIRETO TEMPORÁRIO ('send_mode="link"'): ao tocar no link pelo celular (Chrome/Safari), o arquivo é baixado direto para a pasta Download do aparelho, sendo reconhecido automaticamente nos aplicativos de música (Samsung Music, Xiaomi, VLC, etc.) e pronto para envio.
+         4. Se o usuário pedir especificamente player no chat ou documento anexado, use send_mode="chat_player", "document" ou "both".
+         5. Ao concluir, apresente o título, autor, duração, tamanho, a validade de 48 horas e o link direto de download destacado com instruções amigáveis.
 
    - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.

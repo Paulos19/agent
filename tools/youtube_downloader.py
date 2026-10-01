@@ -134,6 +134,8 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
             "format": expected_ext.upper()
         }
 
+from tools.temp_storage import register_temp_file, get_download_url, get_storage_dir
+
 async def download_youtube_media(
     url: str,
     format_type: str = "mp3",
@@ -146,19 +148,18 @@ async def download_youtube_media(
 ) -> str:
     """
     Baixa vídeo ou áudio do YouTube por meio da URL, converte para MP3 (ou MP4)
-    em alta qualidade e gera links diretos para download no celular/computador.
-    Padrão 'send_mode="link"' envia o link direto clicável para salvar na pasta Download
-    do aparelho (onde os players de música e galeria enxergam imediatamente).
+    em alta qualidade na VPS, armazena no storage temporário com validade de 48 horas
+    (estilo Drive) e gera o link direto para download no celular/computador.
     """
     clean_url = url.strip()
     if not clean_url.startswith("http"):
         return f"[ERRO]: URL inválida: '{clean_url}'. Envie um link válido do YouTube (ex: https://www.youtube.com/watch?v=...)."
 
-    # Define pasta de destino
+    # Define pasta de destino na VPS (storage temporário)
     if destination_folder:
         out_dir = Path(destination_folder).resolve()
     else:
-        out_dir = settings.workspace_path / "downloads"
+        out_dir = get_storage_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -175,8 +176,19 @@ async def download_youtube_media(
     uploader = result["uploader"]
     fmt = result["format"]
 
-    urls = _get_public_download_urls(file_name)
-    main_download_link = urls.get("public") or urls.get("local")
+    # Registra no storage temporário da VPS com retenção de 48 horas
+    storage_record = register_temp_file(
+        file_path=file_path,
+        filename=file_name,
+        metadata={
+            "title": title,
+            "uploader": uploader,
+            "duration": duration_formatted
+        },
+        ttl_hours=48
+    )
+    token = storage_record["token"]
+    main_download_link = get_download_url(token)
 
     # Envio opcional direto para o WhatsApp/Telegram se solicitado (documento ou player)
     sent_media_status = ""
@@ -228,11 +240,12 @@ async def download_youtube_media(
         f"📌 *Título:* {title}\n"
         f"👤 *Canal/Autor:* {uploader}\n"
         f"⏱️ *Duração:* {duration_formatted}\n"
-        f"📦 *Formato:* {fmt} ({file_size_formatted})\n\n"
-        f"⬇️ *CLIQUE NO LINK ABAIXO PARA BAIXAR NO SEU CELULAR:*\n"
+        f"📦 *Formato:* {fmt} ({file_size_formatted})\n"
+        f"⏳ *Validade:* 48 horas (Armazenamento temporário na VPS)\n\n"
+        f"⬇️ *CLIQUE NO LINK PARA BAIXAR NO SEU CELULAR:*\n"
         f"{main_download_link}\n\n"
-        f"💡 _Ao tocar no link acima, o arquivo é baixado direto para a pasta **Download** do seu smartphone. "
-        f"Com isso, seu aplicativo de música (Samsung Music, Xiaomi, VLC, etc.) reconhece o áudio automaticamente "
-        f"e você pode enviá-lo como áudio para qualquer pessoa quando quiser!_{sent_media_status}"
+        f"💡 _Ao tocar no link acima, o download iniciará direto na pasta **Download** do seu smartphone. "
+        f"Assim, tocadores como Samsung Music, Xiaomi e YouTube Music reconhecem a faixa na hora "
+        f"e você pode enviá-la como áudio nativo quando quiser!_{sent_media_status}"
     )
     return response
