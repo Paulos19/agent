@@ -40,7 +40,7 @@ def _save_registry(registry: Dict[str, Any]):
         print(f"[TempStorage] Erro ao salvar registro: {e}")
 
 def register_temp_file(
-    file_path: Path,
+    file_path: Any,
     filename: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     ttl_hours: int = 48
@@ -50,25 +50,24 @@ def register_temp_file(
     Retorna o dicionário de registro contendo o token e as URLs.
     """
     token = uuid.uuid4().hex[:12]
-    clean_filename = filename or file_path.name
+    p_path = Path(file_path).resolve()
+    clean_filename = str(filename or p_path.name)
     now = time.time()
     expires_at = now + (ttl_hours * 3600)
 
     # Garante que o arquivo esteja dentro do storage_dir
-    storage_dir = get_storage_dir()
-    if file_path.parent.resolve() != storage_dir.resolve():
+    storage_dir = get_storage_dir().resolve()
+    if p_path.parent != storage_dir:
         target_path = storage_dir / f"{token}_{clean_filename}"
         try:
-            # Move ou copia para o storage temporário
-            file_path.rename(target_path)
+            p_path.rename(target_path)
             actual_file = target_path
         except Exception:
-            # Fallback para cópia
             import shutil
-            shutil.copy2(file_path, target_path)
+            shutil.copy2(p_path, target_path)
             actual_file = target_path
     else:
-        actual_file = file_path
+        actual_file = p_path
 
     record = {
         "token": token,
@@ -108,8 +107,27 @@ def get_temp_file(token: str) -> Optional[Dict[str, Any]]:
         _save_registry(registry)
         return None
 
-    p = Path(record.get("file_path", ""))
-    if not p.exists() or not p.is_file():
+    raw_path = record.get("file_path", "")
+    p = Path(raw_path) if raw_path else None
+    if not p or not p.exists() or not p.is_file():
+        # Fallback: tenta localizar na pasta storage_dir
+        storage_dir = get_storage_dir()
+        stored_name = record.get("stored_filename") or record.get("filename")
+        if stored_name and (storage_dir / stored_name).is_file():
+            actual = storage_dir / stored_name
+            record["file_path"] = str(actual.resolve())
+            registry[token] = record
+            _save_registry(registry)
+            return record
+
+        for cand in storage_dir.glob(f"*{token}*"):
+            if cand.is_file():
+                record["file_path"] = str(cand.resolve())
+                registry[token] = record
+                _save_registry(registry)
+                return record
+
+        # Arquivo físico realmente não existe
         registry.pop(token, None)
         _save_registry(registry)
         return None

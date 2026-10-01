@@ -135,10 +135,7 @@ async def download_temp_file(token: str, filename: Optional[str] = None):
     Verifica se o token é válido e não expirou.
     Força o download direto para a pasta de Downloads do dispositivo (Android/iOS/PC).
     """
-    from tools.temp_storage import get_temp_file
-    record = get_temp_file(token)
-    if not record:
-        html_expired = """<!DOCTYPE html>
+    html_expired = """<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
@@ -162,36 +159,71 @@ async def download_temp_file(token: str, filename: Optional[str] = None):
   </div>
 </body>
 </html>"""
-        return HTMLResponse(content=html_expired, status_code=410)
 
-    file_path = Path(record["file_path"])
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Arquivo físico não encontrado no storage.")
+    try:
+        from tools.temp_storage import get_temp_file
+        record = get_temp_file(token)
+        if not record:
+            return HTMLResponse(content=html_expired, status_code=410)
 
-    actual_filename = record.get("filename", file_path.name)
-    ext = file_path.suffix.lower()
-    if ext == ".mp3":
-        mime = "audio/mpeg"
-    elif ext == ".mp4":
-        mime = "video/mp4"
-    elif ext == ".m4a":
-        mime = "audio/mp4"
-    else:
-        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+        raw_path = record.get("file_path")
+        if not raw_path:
+            return HTMLResponse(content=html_expired, status_code=410)
 
-    safe_ascii_name = re.sub(r'[^\w\s\.-]', '_', actual_filename)
-    quoted_name = urllib.parse.quote(actual_filename)
-    content_disposition = f'attachment; filename="{safe_ascii_name}"; filename*=UTF-8\'\'{quoted_name}'
+        file_path = Path(raw_path)
+        if not file_path.exists() or not file_path.is_file():
+            return HTMLResponse(content=html_expired, status_code=410)
 
-    return FileResponse(
-        path=str(file_path),
-        media_type=mime,
-        headers={
-            "Content-Disposition": content_disposition,
-            "Cache-Control": "public, max-age=3600",
-            "Accept-Ranges": "bytes"
-        }
-    )
+        # Nome seguro para cabeçalhos HTTP
+        raw_name = record.get("filename") or filename or file_path.name or f"audio_{token}.mp3"
+        actual_filename = str(raw_name)
+
+        ext = file_path.suffix.lower()
+        if ext == ".mp3":
+            mime = "audio/mpeg"
+        elif ext == ".mp4":
+            mime = "video/mp4"
+        elif ext == ".m4a":
+            mime = "audio/mp4"
+        else:
+            mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+
+        safe_ascii_name = re.sub(r'[^\w\s\.-]', '_', actual_filename).strip()
+        if not safe_ascii_name:
+            safe_ascii_name = f"download_{token}{ext}"
+        quoted_name = urllib.parse.quote(actual_filename)
+        content_disposition = f'attachment; filename="{safe_ascii_name}"; filename*=UTF-8\'\'{quoted_name}'
+
+        return FileResponse(
+            path=str(file_path.resolve()),
+            media_type=mime,
+            filename=safe_ascii_name,
+            headers={
+                "Content-Disposition": content_disposition,
+                "Cache-Control": "public, max-age=3600",
+                "Accept-Ranges": "bytes"
+            }
+        )
+    except Exception as e:
+        logger.exception(f"[Download Error] Falha ao servir arquivo para token '{token}': {e}")
+        return HTMLResponse(
+            content=f"<!DOCTYPE html><html><body style='background:#090a0f;color:#ededed;font-family:sans-serif;padding:40px;text-align:center;'><h1>Erro ao processar download</h1><p>{str(e)}</p></body></html>",
+            status_code=500
+        )
+
+@app.get("/api/debug_token/{token}")
+async def debug_token(token: str):
+    """Retorna detalhes do token para diagnóstico."""
+    from tools.temp_storage import _load_registry, get_storage_dir
+    reg = _load_registry()
+    storage_dir = get_storage_dir()
+    files = [f.name for f in storage_dir.glob("*")]
+    return {
+        "token": token,
+        "record_in_registry": reg.get(token),
+        "total_records": len(reg),
+        "files_in_storage": files
+    }
 
 @app.post("/api/upload_temp")
 async def upload_temp_file(
