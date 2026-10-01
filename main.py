@@ -5,6 +5,10 @@ from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import urllib.parse
+import re
+import mimetypes
 from pydantic import BaseModel
 import uvicorn
 
@@ -59,6 +63,50 @@ app = FastAPI(title="Assistente CLI & DevOps Agent", lifespan=lifespan)
 downloads_dir = settings.workspace_path / "downloads"
 downloads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/downloads", StaticFiles(directory=str(downloads_dir)), name="downloads")
+
+@app.get("/download/{filename}")
+async def download_file_direct(filename: str):
+    """
+    Endpoint de download direto com Content-Disposition: attachment.
+    Força o navegador do celular (Chrome/Safari) a fazer o download direto
+    para a pasta 'Download' do aparelho (onde os apps de música e galeria enxergam),
+    em vez de abrir apenas para reprodução na aba.
+    """
+    decoded_name = urllib.parse.unquote(filename)
+    downloads_path = (settings.workspace_path / "downloads").resolve()
+    file_path = (downloads_path / decoded_name).resolve()
+
+    # Prevenção de Path Traversal
+    if not str(file_path).startswith(str(downloads_path)):
+        raise HTTPException(status_code=403, detail="Acesso não autorizado.")
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado ou já expirado.")
+
+    ext = file_path.suffix.lower()
+    if ext == ".mp3":
+        mime = "audio/mpeg"
+    elif ext == ".mp4":
+        mime = "video/mp4"
+    elif ext == ".m4a":
+        mime = "audio/mp4"
+    else:
+        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+
+    # RFC 5987 / 6266 encoding para cabeçalho de download
+    safe_ascii_name = re.sub(r'[^\w\s\.-]', '_', file_path.name)
+    quoted_name = urllib.parse.quote(file_path.name)
+    content_disposition = f'attachment; filename="{safe_ascii_name}"; filename*=UTF-8\'\'{quoted_name}'
+
+    return FileResponse(
+        path=str(file_path),
+        media_type=mime,
+        headers={
+            "Content-Disposition": content_disposition,
+            "Cache-Control": "public, max-age=3600",
+            "Accept-Ranges": "bytes"
+        }
+    )
 
 async def process_user_request(user_id: str, channel: str, prompt: str):
     """Executa a solicitação do usuário com suporte a streaming de progresso e concorrência."""

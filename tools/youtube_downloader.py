@@ -28,19 +28,34 @@ def _format_size(size_bytes: Optional[int]) -> str:
         return f"{size_bytes / 1024:.1f} KB"
     return f"{mb:.2f} MB"
 
+import socket
+
+def _get_local_ip() -> str:
+    """Obtém o IP local na rede Wi-Fi/Ethernet."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
 def _get_public_download_urls(filename: str) -> Dict[str, str]:
-    """Gera links HTTP para download direto do arquivo."""
+    """Gera links HTTP para download direto do arquivo com header de anexo."""
     encoded_name = urllib.parse.quote(filename)
+    local_ip = _get_local_ip()
     urls = {
-        "local": f"http://localhost:{settings.PORT}/downloads/{encoded_name}"
+        "local": f"http://{local_ip}:{settings.PORT}/download/{encoded_name}"
     }
     
-    # Se houver VPS_WS_URL configurada (ex: wss://agent.phdev.top/ws/worker), extrai o domínio HTTP
-    if settings.VPS_WS_URL:
-        domain_match = re.search(r'wss?://([^/]+)', settings.VPS_WS_URL)
+    # Se houver VPS_WS_URL configurada (ex: wss://agent.phdev.top/ws/worker), extrai o domínio HTTP público
+    vps_ws = getattr(settings, "VPS_WS_URL", None) or os.getenv("VPS_WS_URL", "wss://agent.phdev.top/ws/worker")
+    if vps_ws:
+        domain_match = re.search(r'wss?://([^/]+)', vps_ws)
         if domain_match:
             vps_host = domain_match.group(1)
-            urls["public"] = f"https://{vps_host}/downloads/{encoded_name}"
+            urls["public"] = f"https://{vps_host}/download/{encoded_name}"
             
     return urls
 
@@ -125,14 +140,15 @@ async def download_youtube_media(
     quality: str = "best",
     destination_folder: Optional[str] = None,
     send_to_chat: bool = True,
-    send_mode: str = "both",
+    send_mode: str = "link",
     user_id: Optional[str] = None,
     channel: Optional[str] = "whatsapp"
 ) -> str:
     """
     Baixa vídeo ou áudio do YouTube por meio da URL, converte para MP3 (ou MP4)
-    em alta qualidade, gera links para download e envia o arquivo como DOCUMENTO
-    para salvar na memória do celular/abrir em tocadores nativos e/ou como PLAYER no chat.
+    em alta qualidade e gera links diretos para download no celular/computador.
+    Padrão 'send_mode="link"' envia o link direto clicável para salvar na pasta Download
+    do aparelho (onde os players de música e galeria enxergam imediatamente).
     """
     clean_url = url.strip()
     if not clean_url.startswith("http"):
@@ -160,25 +176,18 @@ async def download_youtube_media(
     fmt = result["format"]
 
     urls = _get_public_download_urls(file_name)
-    download_links_text = ""
-    if "public" in urls:
-        download_links_text += f"\n• Link direto (Nuvem/Web): {urls['public']}"
-    download_links_text += f"\n• Link direto (Local/Rede): {urls['local']}"
+    main_download_link = urls.get("public") or urls.get("local")
 
-    # Envio direto para o WhatsApp/Telegram
-    sent_media_status = "Não solicitado."
-    if send_to_chat and user_id:
+    # Envio opcional direto para o WhatsApp/Telegram se solicitado (documento ou player)
+    sent_media_status = ""
+    if send_to_chat and user_id and send_mode != "link":
         ch = channel or "whatsapp"
         results_sent = []
 
-        # 1. Envio como DOCUMENTO: permite ao usuário salvar diretamente no armazenamento do celular
-        # (Download/WhatsApp Documents), abrir em players nativos (Spotify, Apple Music, VLC, Samsung Music)
-        # e compartilhar/encaminhar nativamente como arquivo real .mp3 ou .mp4.
         if send_mode in ["document", "both"]:
             doc_caption = (
                 f"📁 *{title}*\n"
-                f"👤 Canal: {uploader} | ⏱️ {duration_formatted} | 📦 {file_size_formatted}\n"
-                f"_Toque no arquivo para salvar no celular e escutar em qualquer app de música/vídeo._"
+                f"👤 Canal: {uploader} | ⏱️ {duration_formatted} | 📦 {file_size_formatted}"
             )
             try:
                 ok_doc = await send_channel_media(
@@ -190,11 +199,10 @@ async def download_youtube_media(
                     file_name=file_name
                 )
                 if ok_doc:
-                    results_sent.append("📁 Arquivo para salvar no aparelho")
+                    results_sent.append("📁 Arquivo anexado")
             except Exception:
                 pass
 
-        # 2. Envio como PLAYER DE CHAT: permite ouvir imediatamente no próprio chat do WhatsApp/Telegram
         if send_mode in ["chat_player", "both"]:
             chat_type = "audio" if fmt == "MP3" else "video"
             chat_caption = f"🎧 *{title}* (Player no Chat)"
@@ -213,18 +221,18 @@ async def download_youtube_media(
                 pass
 
         if results_sent:
-            sent_media_status = f"✅ {' e '.join(results_sent)} entregue(s) no seu {ch.capitalize()} com sucesso!"
-        else:
-            sent_media_status = "⚠️ Não foi possível despachar o arquivo via chat (possível limite de tamanho), mas os links diretos de download estão disponíveis abaixo."
+            sent_media_status = f"\n📲 *Envio no Chat:* ✅ {' e '.join(results_sent)} entregue(s)!"
 
     response = (
         f"🎬 *Extração do YouTube Concluída com Sucesso!*\n\n"
         f"📌 *Título:* {title}\n"
         f"👤 *Canal/Autor:* {uploader}\n"
         f"⏱️ *Duração:* {duration_formatted}\n"
-        f"📦 *Formato:* {fmt} ({file_size_formatted})\n"
-        f"📁 *Salvo no PC em:* `{str(file_path)}`\n\n"
-        f"📲 *Envio para o Chat:* {sent_media_status}\n\n"
-        f"🌐 *Links para Download Imediato:*{download_links_text}\n"
+        f"📦 *Formato:* {fmt} ({file_size_formatted})\n\n"
+        f"⬇️ *CLIQUE NO LINK ABAIXO PARA BAIXAR NO SEU CELULAR:*\n"
+        f"{main_download_link}\n\n"
+        f"💡 _Ao tocar no link acima, o arquivo é baixado direto para a pasta **Download** do seu smartphone. "
+        f"Com isso, seu aplicativo de música (Samsung Music, Xiaomi, VLC, etc.) reconhece o áudio automaticamente "
+        f"e você pode enviá-lo como áudio para qualquer pessoa quando quiser!_{sent_media_status}"
     )
     return response

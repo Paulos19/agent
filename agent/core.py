@@ -652,8 +652,8 @@ AGENT_TOOLS = [
                     },
                     "send_mode": {
                         "type": "string",
-                        "enum": ["both", "document", "chat_player"],
-                        "description": "Modo de envio para o WhatsApp/Telegram: 'both' (padrão) envia como DOCUMENTO (salva no armazenamento do celular, abre em apps nativos de música/vídeo e permite compartilhar) E como player no chat; 'document' envia apenas o arquivo para salvar no celular; 'chat_player' envia apenas como player no chat."
+                        "enum": ["link", "chat_player", "document", "both"],
+                        "description": "Modo de entrega: 'link' (padrão e recomendado para celular) gera link direto que baixa na pasta Download do aparelho para reconhecimento em players nativos; 'chat_player' envia player de áudio no chat; 'document' envia como anexo; 'both' envia arquivo + player."
                     }
                 },
                 "required": ["url"]
@@ -799,9 +799,10 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
        - Você possui a ferramenta nativa 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True)'.
        - Sempre que o usuário enviar um link do YouTube ou pedir para extrair áudio, converter em MP3, baixar o vídeo ou disponibilizar arquivo para download:
          1. Execute 'download_youtube_media' passando a URL do YouTube e o formato desejado ('mp3' para áudio ou 'mp4' para vídeo).
-         2. A ferramenta extrai com yt-dlp e FFmpeg embutido na melhor taxa de bits, salva em 'workspace/downloads' e gera links diretos HTTP.
-         3. No WhatsApp/Telegram, ela envia o arquivo como DOCUMENTO baixável (para o arquivo ficar salvo no armazenamento do celular, poder ser escutado em tocadores nativos de música/vídeo e ser compartilhado/encaminhado com facilidade) e também como player direto no chat!
-         4. Ao concluir, apresente o título, autor, duração, tamanho e os links diretos para download.
+         2. A ferramenta extrai com yt-dlp e FFmpeg embutido na melhor taxa de bits e salva em 'workspace/downloads'.
+         3. A entrega padrão é via LINK DIRETO ('send_mode="link"'): ao tocar no link no WhatsApp/Telegram, o smartphone faz o download oficial para a pasta Download do sistema, fazendo com que os aplicativos de música (Samsung Music, Xiaomi, VLC, etc.) reconheçam o arquivo imediatamente no aparelho, sem travar na pasta interna do WhatsApp.
+         4. Se o usuário pedir especificamente player no chat ou arquivo anexado, use send_mode="chat_player", "document" ou "both".
+         5. Ao concluir, apresente o título, autor, duração, tamanho e o link direto de download destacado com instruções amigáveis.
 
    - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
@@ -1145,7 +1146,7 @@ async def run_agent_loop(
                         quality=args.get("quality", "best"),
                         destination_folder=args.get("destination_folder"),
                         send_to_chat=args.get("send_to_chat", True),
-                        send_mode=args.get("send_mode", "both"),
+                        send_mode=args.get("send_mode", "link"),
                         user_id=user_id,
                         channel=channel
                     )
