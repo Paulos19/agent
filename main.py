@@ -112,10 +112,39 @@ async def download_file_direct(filename: str):
     else:
         mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
 
-    # RFC 5987 / 6266 encoding para cabeçalho de download
-    safe_ascii_name = re.sub(r'[^\w\s\.-]', '_', file_path.name)
-    quoted_name = urllib.parse.quote(file_path.name)
-    content_disposition = f'attachment; filename="{safe_ascii_name}"; filename*=UTF-8\'\'{quoted_name}'
+def _make_content_disposition(filename: str, fallback_prefix: str = "download") -> str:
+    """Gera cabeçalho Content-Disposition 100% compatível com RFC 5987 / RFC 6266 (Latin-1 safe)."""
+    import unicodedata
+    ext = Path(filename).suffix.lower()
+    # Remove acentos e caracteres não-ASCII (coreano, japonês, etc.) para o filename legado
+    ascii_clean = unicodedata.normalize('NFKD', str(filename)).encode('ascii', 'ignore').decode('ascii')
+    safe_ascii = re.sub(r'[^a-zA-Z0-9_\.-]', '_', ascii_clean)
+    safe_ascii = re.sub(r'_+', '_', safe_ascii).strip('_')
+    if not safe_ascii or safe_ascii.startswith('.'):
+        safe_ascii = f"{fallback_prefix}{ext or '.mp3'}"
+    quoted_utf8 = urllib.parse.quote(str(filename))
+    return f'attachment; filename="{safe_ascii}"; filename*=UTF-8\'\'{quoted_utf8}'
+
+@app.get("/download/{filename}")
+async def download_file(filename: str):
+    """
+    Endpoint legado para download direto de arquivos do projeto no workspace.
+    """
+    file_path = (settings.workspace_path / filename).resolve()
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado.")
+
+    ext = file_path.suffix.lower()
+    if ext == ".mp3":
+        mime = "audio/mpeg"
+    elif ext == ".mp4":
+        mime = "video/mp4"
+    elif ext == ".m4a":
+        mime = "audio/mp4"
+    else:
+        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+
+    content_disposition = _make_content_disposition(file_path.name)
 
     return FileResponse(
         path=str(file_path),
@@ -174,7 +203,6 @@ async def download_temp_file(token: str, filename: Optional[str] = None):
         if not file_path.exists() or not file_path.is_file():
             return HTMLResponse(content=html_expired, status_code=410)
 
-        # Nome seguro para cabeçalhos HTTP
         raw_name = record.get("filename") or filename or file_path.name or f"audio_{token}.mp3"
         actual_filename = str(raw_name)
 
@@ -188,16 +216,11 @@ async def download_temp_file(token: str, filename: Optional[str] = None):
         else:
             mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
 
-        safe_ascii_name = re.sub(r'[^\w\s\.-]', '_', actual_filename).strip()
-        if not safe_ascii_name:
-            safe_ascii_name = f"download_{token}{ext}"
-        quoted_name = urllib.parse.quote(actual_filename)
-        content_disposition = f'attachment; filename="{safe_ascii_name}"; filename*=UTF-8\'\'{quoted_name}'
+        content_disposition = _make_content_disposition(actual_filename, fallback_prefix=f"download_{token}")
 
         return FileResponse(
             path=str(file_path.resolve()),
             media_type=mime,
-            filename=safe_ascii_name,
             headers={
                 "Content-Disposition": content_disposition,
                 "Cache-Control": "public, max-age=3600",
