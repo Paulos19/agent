@@ -157,7 +157,9 @@ async def download_file(filename: str):
     )
 
 @app.get("/d/{token}")
+@app.head("/d/{token}")
 @app.get("/d/{token}/{filename}")
+@app.head("/d/{token}/{filename}")
 async def download_temp_file(token: str, filename: Optional[str] = None):
     """
     Download de arquivo temporário de 48 horas estilo Drive / WeTransfer.
