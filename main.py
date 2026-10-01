@@ -248,6 +248,36 @@ async def upload_cookies_file(
 
     return {"status": "success", "message": "Arquivo cookies.txt salvo com sucesso no servidor!", "path": str(dest)}
 
+class DownloadYouTubeRequest(BaseModel):
+    url: str
+    format_type: str = "mp3"
+    quality: str = "best"
+    send_to_chat: bool = False
+    send_mode: str = "link"
+    user_id: Optional[str] = None
+    channel: Optional[str] = None
+
+@app.post("/api/download_youtube")
+async def api_download_youtube(
+    req: DownloadYouTubeRequest,
+    token: str = Query(...)
+):
+    """Executa a extração do YouTube no servidor com o storage de 48h."""
+    if token != settings.WORKER_SECRET:
+        raise HTTPException(status_code=403, detail="Token inválido")
+
+    from tools.youtube_downloader import download_youtube_media
+    result_text = await download_youtube_media(
+        url=req.url,
+        format_type=req.format_type,
+        quality=req.quality,
+        send_to_chat=req.send_to_chat,
+        send_mode=req.send_mode,
+        user_id=req.user_id,
+        channel=req.channel
+    )
+    return {"status": "success", "result": result_text}
+
 async def process_user_request(user_id: str, channel: str, prompt: str):
     """Executa a solicitação do usuário com suporte a streaming de progresso e concorrência."""
     logger.info(f"[Iniciando Processamento] Usuário: {user_id} | Canal: {channel} | Prompt: {prompt[:60]}...")
