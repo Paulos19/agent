@@ -659,6 +659,18 @@ AGENT_TOOLS = [
                 "required": ["url"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "take_pc_screenshot",
+            "description": "Tira uma captura de tela (screenshot/print) em alta definição do computador pessoal do usuário (Windows) e envia imediatamente como foto no chat do WhatsApp/Telegram. Use sempre que o usuário perguntar o que está aberto no PC, pedir print da tela, ou quiser monitorar visualmente o computador.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
     }
 ]
 
@@ -895,6 +907,11 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         return (
             f"Baixando e convertendo {plat} ({fmt})",
             f"🎬 Baixando conteúdo do {plat} e convertendo em {fmt}... Te envio a mídia no chat e o link da pasta Downloads em instantes! 🎧"
+        )
+    elif fn_name == "take_pc_screenshot":
+        return (
+            "Capturando tela do PC",
+            "📸 Tirando print da tela do seu computador Windows agora... Te envio a imagem em instantes!"
         )
     return (f"Executando {fn_name}", "")
 
@@ -1160,6 +1177,32 @@ async def run_agent_loop(
                         user_id=user_id,
                         channel=channel
                     )
+                elif fn_name == "take_pc_screenshot":
+                    if not node_manager.is_connected:
+                        tool_output = "ERRO: O computador pessoal do usuário está offline no momento (worker Windows desconectado)."
+                    else:
+                        from channels import send_channel_media
+                        from datetime import datetime
+                        pc_res = await node_manager.execute_on_pc("take_screenshot", {"upload_to_vps": True})
+                        res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
+                        if res_data.get("success"):
+                            file_info = res_data.get("result", {})
+                            vps_file_path = file_info.get("file_path")
+                            if vps_file_path and Path(vps_file_path).exists():
+                                now_str = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                                await send_channel_media(
+                                    recipient=user_id,
+                                    channel=channel,
+                                    file_path=str(vps_file_path),
+                                    caption=f"📸 *Screenshot do seu PC*\n⏱️ Capturado em: {now_str}",
+                                    media_type="image",
+                                    file_name="screenshot_pc.jpg"
+                                )
+                                tool_output = f"Screenshot da tela do PC capturado com sucesso e enviado como foto para o WhatsApp do usuário! (Arquivo: {file_info.get('file_name')}, tamanho: {file_info.get('size_bytes')} bytes)."
+                            else:
+                                tool_output = f"Print capturado no PC, mas arquivo não localizado na VPS ({vps_file_path})."
+                        else:
+                            tool_output = f"Falha ao capturar screenshot no PC: {res_data.get('error', 'desconhecido')}"
                 else:
                     tool_output = f"[ERRO]: Ferramenta '{fn_name}' desconhecida."
             except Exception as tool_err:

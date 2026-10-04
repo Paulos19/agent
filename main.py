@@ -1,5 +1,7 @@
 import asyncio
 import time
+import json
+from datetime import datetime
 import logging
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -347,7 +349,42 @@ async def process_user_request(user_id: str, channel: str, prompt: str):
         await send_channel_message(user_id, channel, msg_reset)
         return
 
-    # 2. Se JÁ HOUVER uma tarefa ativa para este usuário
+    # 2. Comando rápido de Screenshot do PC (/print, /screenshot, /tela)
+    if prompt.strip().lower() in ["/print", "/screenshot", "/tela"]:
+        if not node_manager.is_connected:
+            await send_channel_message(
+                user_id,
+                channel,
+                "⚠️ *Seu PC está offline no momento!*\n\nO worker local no Windows não está conectado à VPS agora. Ligue ou desperte o PC para que eu possa capturar a tela."
+            )
+            return
+
+        await send_channel_message(user_id, channel, "📸 _Tirando print da tela do seu PC agora, aguenta um instante..._")
+        try:
+            pc_res = await node_manager.execute_on_pc("take_screenshot", {"upload_to_vps": True})
+            res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
+            if res_data.get("success"):
+                file_info = res_data.get("result", {})
+                vps_file_path = file_info.get("file_path")
+                if vps_file_path and Path(vps_file_path).exists():
+                    now_str = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                    ok = await send_channel_media(
+                        recipient=user_id,
+                        channel=channel,
+                        file_path=str(vps_file_path),
+                        caption=f"📸 *Screenshot do seu PC*\n⏱️ Capturado em: {now_str}",
+                        media_type="image",
+                        file_name="screenshot_pc.jpg"
+                    )
+                    if ok:
+                        return
+            err_msg = res_data.get("error", "Não foi possível processar a imagem.")
+            await send_channel_message(user_id, channel, f"❌ Falha ao capturar screenshot: `{err_msg}`")
+        except Exception as e:
+            await send_channel_message(user_id, channel, f"❌ Erro ao capturar tela: `{str(e)}`")
+        return
+
+    # 3. Se JÁ HOUVER uma tarefa ativa para este usuário
     if task_manager.is_busy(user_id):
         # A) Pergunta de status (ex: "como tá?", "status", "tá em que parte?", "falta muito?")
         if task_manager.is_status_query(prompt):

@@ -234,6 +234,36 @@ def local_create_directory(path: str) -> str:
     except Exception as e:
         return f"[ERRO AO CRIAR PASTA]: {str(e)}"
 
+def take_pc_screenshot(out_path: str = None) -> Path:
+    """Captura o screenshot da tela principal do Windows com suporte a troca de desktop."""
+    import ctypes
+    from PIL import ImageGrab, Image
+
+    u32 = ctypes.windll.user32
+    k32 = ctypes.windll.kernel32
+
+    # Garante acesso ao desktop 'default' do usuário interativo
+    old_desk = u32.GetThreadDesktop(k32.GetCurrentThreadId())
+    h_default = u32.OpenDesktopW("default", 0, False, 0x01FF)
+    switched = False
+    if h_default:
+        switched = bool(u32.SetThreadDesktop(h_default))
+
+    try:
+        img = ImageGrab.grab(all_screens=True)
+        if img.width > 1920 or img.height > 1080:
+            img.thumbnail((1920, 1080), Image.Resampling.LANCZOS)
+
+        save_target = Path(out_path) if out_path else Path(__file__).parent / "storage" / "temp_local" / f"screenshot_{int(time.time())}.jpg"
+        save_target.parent.mkdir(parents=True, exist_ok=True)
+        img.save(save_target, "JPEG", quality=85, optimize=True)
+        return save_target
+    finally:
+        if switched and old_desk:
+            u32.SetThreadDesktop(old_desk)
+        if h_default:
+            u32.CloseDesktop(h_default)
+
 async def handle_action(action: str, args: dict, ws=None, call_id: str = None) -> str:
     """Roteia as ações recebidas da VPS para as funções locais com suporte a streaming de progresso."""
     log_print(f"[bold cyan]⚡ Executando ação local:[/bold cyan] [yellow]{action}[/yellow]")
@@ -357,6 +387,45 @@ git push origin {b}
                     pass
 
             res = json.dumps({"success": True, "result": dl_result}, default=str)
+        except Exception as e:
+            res = json.dumps({"success": False, "error": str(e)})
+    elif action == "take_screenshot":
+        await send_progress("📸 Capturando a tela do seu PC Windows...")
+        try:
+            img_path = await asyncio.to_thread(take_pc_screenshot)
+            result_data = {
+                "file_path": str(img_path.resolve()),
+                "file_name": img_path.name,
+                "size_bytes": img_path.stat().st_size
+            }
+
+            if args.get("upload_to_vps", True):
+                await send_progress("☁️ Enviando screenshot para a VPS...")
+                import httpx
+                vps_url = VPS_WS_URL or "wss://agent.phdev.top/ws/worker"
+                domain_match = re.search(r'wss?://([^/]+)', vps_url)
+                vps_host = domain_match.group(1) if domain_match else "agent.phdev.top"
+                upload_endpoint = f"https://{vps_host}/api/upload_temp?token={WORKER_SECRET}"
+
+                with open(img_path, "rb") as f:
+                    files = {"file": (img_path.name, f, "image/jpeg")}
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        resp = await client.post(upload_endpoint, files=files)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            result_data["download_url"] = data.get("download_url")
+                            result_data["file_path"] = data.get("file_path")
+                            result_data["token"] = data.get("token")
+                        else:
+                            raise RuntimeError(f"Erro ao subir print para a VPS ({resp.status_code}): {resp.text}")
+
+                try:
+                    if img_path.exists():
+                        img_path.unlink()
+                except Exception:
+                    pass
+
+            res = json.dumps({"success": True, "result": result_data})
         except Exception as e:
             res = json.dumps({"success": False, "error": str(e)})
     else:
