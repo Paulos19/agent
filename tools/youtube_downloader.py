@@ -130,12 +130,17 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
     out_template = str(out_dir / "%(title).200s.%(ext)s")
 
     # Lista de estratégias de extração em ordem de resiliência:
-    # 1. Cliente Android nativo (alta velocidade, sem bloqueios de JS/cookies)
-    # 2. Cliente Android + iOS
-    # 3. Com arquivo de cookies (se disponível)
+    # Os clientes "android" e "ios" foram revogados pelo YouTube (2025).
+    # Clientes suportados nessa versão do yt-dlp (2026.x):
+    # 1. visionos      — cliente jsless padrão, não requer JS runtime, estável em datacenter
+    # 2. web_creator   — YouTube Studio/Creator, sem bot-check em datacenter
+    # 3. tv_downgraded — TV legado, autenticado, evita bloqueios de datacenter
+    # 4. web           — Fallback padrão web
     strategies = [
-        {"extractor_args": {"youtube": {"player_client": ["android"]}}},
-        {"extractor_args": {"youtube": {"player_client": ["android", "ios"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["visionos"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["web_creator"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["tv_downgraded"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["web"]}}},
     ]
 
     cookies_file = _get_youtube_cookies()
