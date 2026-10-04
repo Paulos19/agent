@@ -32,7 +32,8 @@ from tools import (
     search_mobbin_screens,
     capture_and_analyze_design,
     search_pinterest_and_analyze_ui,
-    download_youtube_media
+    download_youtube_media,
+    download_playlist_media
 )
 
 # Inicializa o cliente OpenAI apontando para o provedor configurado (Gemini, 9Router, etc.)
@@ -663,6 +664,32 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "download_playlist_media",
+            "description": "Baixa uma playlist completa do YouTube (até 50 faixas), converte todas as músicas para MP3 em alta fidelidade 320kbps com capas oficiais embutidas e metadados organizados (artista, álbum, número da faixa), compacta o pacote completo em um arquivo .ZIP e entrega o link temporário de 48 horas para salvar na pasta Downloads. Use sempre que o usuário mandar link de playlist ou pedir para baixar um álbum/coletânea completa.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL da playlist do YouTube (ex: https://www.youtube.com/playlist?list=... ou link de vídeo com parâmetro &list=)."
+                    },
+                    "quality": {
+                        "type": "string",
+                        "enum": ["320", "192", "128"],
+                        "description": "Qualidade do áudio MP3 (padrão '320')."
+                    },
+                    "max_tracks": {
+                        "type": "integer",
+                        "description": "Número máximo de faixas a extrair da playlist (padrão 50)."
+                    }
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "take_pc_screenshot",
             "description": "Tira uma captura de tela (screenshot/print) em alta definição do computador pessoal do usuário (Windows) e envia imediatamente como foto no chat do WhatsApp/Telegram. Use sempre que o usuário perguntar o que está aberto no PC, pedir print da tela, ou quiser monitorar visualmente o computador.",
             "parameters": {
@@ -929,6 +956,11 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         return (
             f"Baixando e convertendo {plat} ({fmt})",
             f"🎬 Baixando conteúdo do {plat} e convertendo em {fmt}... Te envio a mídia no chat e o link da pasta Downloads em instantes! 🎧"
+        )
+    elif fn_name == "download_playlist_media":
+        return (
+            "Baixando playlist completa em .ZIP",
+            "📋 Baixando todas as faixas da playlist em MP3 320kbps com capas oficiais e compactando em .ZIP... Já te envio o pacote completo! 🎧"
         )
     elif fn_name == "take_pc_screenshot":
         return (
@@ -1208,6 +1240,14 @@ async def run_agent_loop(
                         destination_folder=args.get("destination_folder"),
                         send_to_chat=args.get("send_to_chat", True),
                         send_mode=args.get("send_mode", "link"),
+                        user_id=user_id,
+                        channel=channel
+                    )
+                elif fn_name == "download_playlist_media":
+                    tool_output = await download_playlist_media(
+                        url=args.get("url", ""),
+                        quality=args.get("quality", "320"),
+                        max_tracks=args.get("max_tracks", 50),
                         user_id=user_id,
                         channel=channel
                     )

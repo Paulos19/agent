@@ -417,6 +417,48 @@ git push origin {b}
             res = json.dumps({"success": True, "result": dl_result}, default=str)
         except Exception as e:
             res = json.dumps({"success": False, "error": str(e)})
+    elif action == "download_playlist_media_local":
+        from tools.youtube_downloader import _run_playlist_dlp
+        url = args.get("url")
+        qual = args.get("quality", "320")
+        max_t = args.get("max_tracks", 50)
+
+        await send_progress("📋 Extraindo Playlist no seu PC local (IP Residencial)...")
+        local_temp = Path(__file__).parent / "storage" / "temp_local"
+        local_temp.mkdir(parents=True, exist_ok=True)
+
+        try:
+            dl_result = await asyncio.to_thread(_run_playlist_dlp, url, qual, local_temp, max_t)
+            local_file_path = Path(dl_result["file_path"])
+            if args.get("upload_to_vps"):
+                await send_progress("☁️ Enviando pacote .ZIP da playlist para a VPS...")
+                import httpx
+                vps_url = VPS_WS_URL or "wss://agent.phdev.top/ws/worker"
+                domain_match = re.search(r'wss?://([^/]+)', vps_url)
+                vps_host = domain_match.group(1) if domain_match else "agent.phdev.top"
+                upload_endpoint = f"https://{vps_host}/api/upload_temp?token={WORKER_SECRET}"
+
+                with open(local_file_path, "rb") as f:
+                    files = {"file": (dl_result["file_name"], f, "application/zip")}
+                    async with httpx.AsyncClient(timeout=300.0) as client:
+                        resp = await client.post(upload_endpoint, files=files)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            dl_result["download_url"] = data["download_url"]
+                            dl_result["file_path"] = data["file_path"]
+                            dl_result["token"] = data["token"]
+                        else:
+                            raise RuntimeError(f"Erro ao subir .ZIP para a VPS ({resp.status_code}): {resp.text}")
+
+                try:
+                    if local_file_path.exists():
+                        local_file_path.unlink()
+                except Exception:
+                    pass
+
+            res = json.dumps({"success": True, "result": dl_result}, default=str)
+        except Exception as e:
+            res = json.dumps({"success": False, "error": str(e)})
     elif action == "take_screenshot":
         await send_progress("📸 Capturando a tela do seu PC Windows...")
         try:

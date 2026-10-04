@@ -397,7 +397,8 @@ async def process_user_request(user_id: str, channel: str, prompt: str):
         allowed_cmd_words = {
             "baixe", "baixa", "baixar", "para", "pra", "mim", "essa", "esse",
             "o", "a", "de", "do", "da", "download", "musica", "música",
-            "video", "vídeo", "clipe", "mp3", "mp4", "som", "favor", "por"
+            "video", "vídeo", "clipe", "mp3", "mp4", "som", "favor", "por",
+            "playlist", "album", "álbum", "coletanea", "coletânea", "disco"
         }
         is_download_cmd = not words or all(w in allowed_cmd_words for w in words)
         if is_download_cmd:

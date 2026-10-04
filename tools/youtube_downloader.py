@@ -273,9 +273,252 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
 
     if last_error:
         raise last_error
-    raise RuntimeError("Falha ao extrair vídeo em todas as estratégias.")
+def is_playlist_url(url: str) -> bool:
+    """Verifica se a URL aponta para uma playlist ou álbum de músicas."""
+    if not url:
+        return False
+    u = url.lower()
+    if "youtube.com/playlist" in u or "music.youtube.com/playlist" in u:
+        return True
+    if ("youtube.com" in u or "youtu.be" in u) and ("list=" in u):
+        return True
+    return False
+
+def _sanitize_folder_name(name: str) -> str:
+    """Remove caracteres inválidos para pastas e arquivos no Windows/Linux."""
+    clean = re.sub(r'[\\/*?:"<>|]', "", name)
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    return clean[:80] or "playlist"
+
+def _run_playlist_dlp(url: str, quality: str, out_dir: Path, max_tracks: int = 50) -> Dict[str, Any]:
+    """Executa o download de playlist completa, converte faixas para MP3 320kbps, enriquece metadados e gera .ZIP."""
+    import zipfile
+    import shutil
+    import logging
+    logger = logging.getLogger(__name__)
+
+    ffmpeg_loc = _get_ffmpeg_location()
+    cookies_file = _get_youtube_cookies()
+
+    # 1. Obtém metadados da playlist com extract_flat
+    flat_opts: Dict[str, Any] = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "noplaylist": False,
+    }
+    if cookies_file:
+        flat_opts["cookiefile"] = cookies_file
+
+    playlist_title = "Playlist"
+    uploader = "Desconhecido"
+
+    try:
+        with yt_dlp.YoutubeDL(flat_opts) as ydl:
+            flat_info = ydl.extract_info(url, download=False)
+            if flat_info:
+                playlist_title = flat_info.get("title") or "Playlist"
+                uploader = flat_info.get("uploader") or flat_info.get("channel") or "Desconhecido"
+    except Exception as e:
+        logger.warning(f"[Playlist] Falha ao extrair info flat da playlist: {e}")
+
+    safe_title = _sanitize_folder_name(playlist_title)
+    timestamp = int(time.time())
+    pl_dir = out_dir / f"pl_{timestamp}_{safe_title}"
+    pl_dir.mkdir(parents=True, exist_ok=True)
+
+    out_template = str(pl_dir / "%(playlist_index|00)02d - %(title).100s.%(ext)s")
+    audio_quality = "320" if "320" in quality else ("128" if "128" in quality else "192")
+
+    strategies = [
+        {"extractor_args": {"youtube": {"player_client": ["visionos"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["web_creator"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["tv_downgraded"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["web"]}}},
+    ]
+    if cookies_file:
+        strategies.append({"cookiefile": cookies_file})
+
+    downloaded = False
+    last_error = None
+
+    for strat in strategies:
+        ydl_opts: Dict[str, Any] = {
+            "outtmpl": out_template,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": False,
+            "playlistend": max_tracks,
+            "format": "ba/b",
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": audio_quality,
+            }],
+            "ignoreerrors": True,  # Continua mesmo se 1 vídeo da lista for indisponível
+        }
+        if ffmpeg_loc:
+            ydl_opts["ffmpeg_location"] = ffmpeg_loc
+        ydl_opts.update(strat)
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.extract_info(url, download=True)
+                downloaded = True
+                break
+        except Exception as err:
+            last_error = err
+            continue
+
+    if not downloaded and last_error:
+        raise last_error
+
+    # 2. Localiza os arquivos MP3 gerados
+    mp3_files = sorted(list(pl_dir.glob("*.mp3")), key=lambda f: f.name)
+    if not mp3_files:
+        raise RuntimeError("Nenhuma faixa pôde ser extraída da playlist.")
+
+    total_count = len(mp3_files)
+
+    # 3. Enriquece tags ID3 em cada MP3
+    for idx, mp3_file in enumerate(mp3_files, 1):
+        try:
+            clean_name = re.sub(r'^\d+\s*[-–—]\s*', '', mp3_file.stem)
+            fake_info = {
+                "title": clean_name,
+                "uploader": uploader,
+                "track_number": f"{idx}/{total_count}",
+                "album": playlist_title,
+                "webpage_url": url,
+            }
+            enrich_mp3_metadata(mp3_file, fake_info)
+        except Exception as tag_err:
+            logger.warning(f"[Playlist Tagger] Erro ao enriquecer {mp3_file.name}: {tag_err}")
+
+    # 4. Compacta todas as faixas em um arquivo .ZIP de alta qualidade
+    zip_filename = f"{safe_title}.zip"
+    zip_path = out_dir / zip_filename
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for mp3_file in mp3_files:
+            zipf.write(mp3_file, arcname=mp3_file.name)
+
+    # 5. Remove a pasta de MP3s descompactados para economizar espaço
+    try:
+        shutil.rmtree(pl_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+    zip_size = zip_path.stat().st_size
+    return {
+        "title": playlist_title,
+        "uploader": uploader,
+        "track_count": total_count,
+        "file_path": zip_path,
+        "file_name": zip_filename,
+        "file_size": zip_size,
+        "format": "ZIP"
+    }
 
 from tools.temp_storage import register_temp_file, get_download_url, get_storage_dir
+
+async def download_playlist_media(
+    url: str,
+    quality: str = "320",
+    max_tracks: int = 50,
+    user_id: Optional[str] = None,
+    channel: Optional[str] = "whatsapp"
+) -> str:
+    """
+    Baixa uma playlist completa do YouTube (até 50 faixas), converte cada faixa
+    para MP3 320kbps com tags e capas oficiais embutidas, compacta em um pacote
+    .ZIP organizado e gera o link direto de download temporário de 48 horas.
+    """
+    clean_url = url.strip()
+    if not clean_url.startswith("http"):
+        return f"[ERRO]: URL inválida: '{clean_url}'."
+
+    out_dir = get_storage_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    result = None
+    try:
+        result = await asyncio.to_thread(_run_playlist_dlp, clean_url, quality, out_dir, max_tracks)
+    except Exception as e:
+        err_str = str(e)
+        from agent.nodes import node_manager
+        is_bot_block = any(k in err_str.lower() for k in ["not a bot", "sign in", "bot", "403", "forbidden"])
+        if is_bot_block and node_manager.is_connected:
+            try:
+                import json
+                pc_res = await node_manager.execute_on_pc("download_playlist_media_local", {
+                    "url": clean_url,
+                    "quality": quality,
+                    "max_tracks": max_tracks,
+                    "upload_to_vps": True
+                })
+                res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
+                if res_data.get("success"):
+                    result = res_data["result"]
+                    result["file_path"] = Path(result["file_path"])
+                else:
+                    raise RuntimeError(res_data.get("error", pc_res))
+            except Exception as pc_err:
+                return f"❌ *Falha ao extrair playlist pelo PC:* `{pc_err}`"
+        else:
+            return f"❌ *Erro ao processar playlist:* {err_str}"
+
+    file_path = result["file_path"]
+    file_name = result["file_name"]
+    file_size_formatted = _format_size(result["file_size"])
+    title = result["title"]
+    uploader = result["uploader"]
+    track_count = result["track_count"]
+    file_size_mb = result.get("file_size", 0) / (1024 * 1024)
+
+    # Registra no storage temporário de 48 horas da VPS
+    storage_record = register_temp_file(
+        file_path=file_path,
+        filename=file_name,
+        metadata={
+            "title": title,
+            "uploader": uploader,
+            "track_count": track_count,
+            "type": "playlist_zip"
+        },
+        ttl_hours=48
+    )
+    token = storage_record["token"]
+    download_link = get_download_url(token)
+
+    sent_status = ""
+    if user_id and file_size_mb <= 25.0:
+        try:
+            ok_media = await send_channel_media(
+                recipient=user_id,
+                channel=channel or "whatsapp",
+                file_path=str(file_path),
+                caption=f"📦 *Playlist: {title}* ({track_count} faixas em .ZIP)",
+                media_type="document",
+                file_name=file_name
+            )
+            if ok_media:
+                sent_status = "\n📲 *Arquivo no Chat:* ✅ O pacote .ZIP foi enviado acima diretamente para você!"
+        except Exception:
+            pass
+
+    response = (
+        f"📦 *Playlist Completa Extraída com Sucesso!*\n\n"
+        f"📌 *Playlist:* {title}\n"
+        f"👤 *Canal/Autor:* {uploader}\n"
+        f"🎵 *Faixas Baixadas:* {track_count} músicas em MP3 320kbps\n"
+        f"📦 *Tamanho do Pacote:* {file_size_formatted} (.ZIP)\n"
+        f"⏳ *Validade:* 48 horas (Armazenamento na VPS)\n\n"
+        f"⬇️ *CLIQUE NO LINK PARA SALVAR O PACOTE .ZIP NA PASTA DOWNLOADS:*\n"
+        f"{download_link}\n\n"
+        f"💡 _Todas as músicas estão numeradas em ordem (01, 02...), renomeadas e com capas de álbum em alta resolução embutidas. Basta descompactar no celular ou PC para curtir!_"
+        f"{sent_status}"
+    )
+    return response
 
 async def download_youtube_media(
     url: str,
@@ -295,6 +538,16 @@ async def download_youtube_media(
     clean_url = url.strip()
     if not clean_url.startswith("http"):
         return f"[ERRO]: URL inválida: '{clean_url}'. Envie um link válido do YouTube (ex: https://www.youtube.com/watch?v=...)."
+
+    # Se for link de playlist e o formato não for vídeo explícito, baixa o pacote .ZIP completo
+    if is_playlist_url(clean_url) and format_type != "mp4":
+        return await download_playlist_media(
+            url=clean_url,
+            quality="320" if "320" in quality else "best",
+            max_tracks=50,
+            user_id=user_id,
+            channel=channel
+        )
 
     # Define pasta de destino na VPS (storage temporário)
     if destination_folder:
