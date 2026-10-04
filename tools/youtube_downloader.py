@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import imageio_ffmpeg
 import yt_dlp
+from tools.music_tagger import enrich_mp3_metadata
 from config import settings
 from channels import send_channel_media
 
@@ -203,6 +204,17 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
                         downloaded_file = candidates[0]
 
                 if downloaded_file and downloaded_file.exists():
+                    # Enriquece metadados ID3 do MP3 (capa, artista, álbum, ano, gênero)
+                    if expected_ext == "mp3":
+                        try:
+                            tag_result = enrich_mp3_metadata(downloaded_file, info)
+                            # Usa o título enriquecido (limpo e validado pelo MusicBrainz)
+                            title = tag_result.get("title") or title
+                            uploader = tag_result.get("artist") or uploader
+                        except Exception as tag_err:
+                            import logging
+                            logging.getLogger(__name__).warning(f"[Tagger] Falha ao enriquecer metadados: {tag_err}")
+
                     file_size = downloaded_file.stat().st_size
                     return {
                         "title": title,
