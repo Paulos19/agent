@@ -341,6 +341,89 @@ async def process_user_request(user_id: str, channel: str, prompt: str):
     """Executa a solicitação do usuário com suporte a streaming de progresso e concorrência."""
     logger.info(f"[Iniciando Processamento] Usuário: {user_id} | Canal: {channel} | Prompt: {prompt[:60]}...")
     
+    clean_num = re.sub(r"\D", "", user_id.split("@")[0])
+    is_guest = (clean_num in settings.guest_users_set) and (clean_num not in settings.allowed_users_set)
+
+    # =========================================================================
+    # 0. CONVIDADO DE MÍDIA (ACESSO RESTRITO EXCLUSIVAMENTE A DOWNLOAD)
+    # =========================================================================
+    if is_guest:
+        from tools.youtube_downloader import extract_media_url, download_youtube_media
+        media_url = extract_media_url(prompt)
+        if not media_url:
+            # Sem link de mídia: silêncio absoluto (não gera conflito em chats pessoais)
+            logger.info(f"[Guest Ignored] Mensagem sem link de mídia de convidado {user_id}: {prompt[:30]}")
+            return
+
+        # Notifica o convidado exclusivamente no chat dele
+        await send_channel_message(
+            user_id,
+            channel,
+            "🎵 *Opa! Recebi seu pedido de download!*\n_Já estou baixando e preparando a sua música em alta qualidade... Aguenta só um segundinho!_"
+        )
+
+        try:
+            p_lower = prompt.lower()
+            format_type = "mp4" if any(w in p_lower for w in ["video", "vídeo", "clipe", "mp4", "assistir"]) else "mp3"
+            reply = await download_youtube_media(
+                url=media_url,
+                format_type=format_type,
+                quality="best",
+                send_to_chat=True,
+                send_mode="link",
+                user_id=user_id,
+                channel=channel
+            )
+            # Envia a mensagem completa com link de 48h exclusivamente no chat do convidado
+            await send_channel_message(user_id, channel, reply)
+        except Exception as e:
+            logger.error(f"[Guest Download] Erro ao extrair mídia para {user_id}: {e}")
+            await send_channel_message(
+                user_id,
+                channel,
+                f"❌ *Desculpe, não consegui baixar essa mídia agora.*\n_Erro:_ {str(e)}"
+            )
+        return
+
+    # =========================================================================
+    # FAST-PATH DE DOWNLOAD DE MÍDIA (INSTANTÂNEO PARA O OPERADOR)
+    # =========================================================================
+    from tools.youtube_downloader import extract_media_url, download_youtube_media
+    detected_url = extract_media_url(prompt)
+    if detected_url:
+        p_clean = prompt.replace(detected_url, "").strip().lower()
+        p_clean_simple = re.sub(r'[^a-zA-Z0-9áéíóúâêîôûãõç]', ' ', p_clean).strip()
+        words = p_clean_simple.split()
+        allowed_cmd_words = {
+            "baixe", "baixa", "baixar", "para", "pra", "mim", "essa", "esse",
+            "o", "a", "de", "do", "da", "download", "musica", "música",
+            "video", "vídeo", "clipe", "mp3", "mp4", "som", "favor", "por"
+        }
+        is_download_cmd = not words or all(w in allowed_cmd_words for w in words)
+        if is_download_cmd:
+            format_type = "mp4" if any(w in prompt.lower() for w in ["video", "vídeo", "clipe", "mp4", "assistir"]) else "mp3"
+            icon = "🎵" if format_type == "mp3" else "🎬"
+            action = "música" if format_type == "mp3" else "vídeo"
+            await send_channel_message(
+                user_id,
+                channel,
+                f"{icon} _Identifiquei o link! Baixando sua {action} em alta qualidade agora... Já te envio o arquivo e o link de 48h!_"
+            )
+            try:
+                reply = await download_youtube_media(
+                    url=detected_url,
+                    format_type=format_type,
+                    quality="best",
+                    send_to_chat=True,
+                    send_mode="link",
+                    user_id=user_id,
+                    channel=channel
+                )
+                await send_channel_message(user_id, channel, reply)
+                return
+            except Exception as e:
+                logger.warning(f"[Media Fast-Path] Falha na rota rápida, redirecionando para agente: {e}")
+
     # 1. Comandos especiais de manutenção de memória
     if prompt.strip().lower() in ["/limpar", "/reset", "/clear"]:
         memory.clear(user_id)
@@ -553,10 +636,11 @@ async def evolution_webhook(request: Request, background_tasks: BackgroundTasks)
 
     logger.info(f"[Webhook Evolution] Recebido de {clean_number} ({remote_jid}): {text[:50]}")
 
-    # Verificação de segurança: Whitelist
+    # Verificação de segurança: Whitelist de Administradores ou Convidados de Mídia
     allowed = settings.allowed_users_set
-    if allowed and clean_number not in allowed:
-        logger.warning(f"[ACESSO BLOQUEADO WHATSAPP]: Número '{clean_number}' não está em ALLOWED_USERS: {allowed}")
+    guests = settings.guest_users_set
+    if allowed and (clean_number not in allowed and clean_number not in guests):
+        logger.warning(f"[ACESSO BLOQUEADO WHATSAPP]: Número '{clean_number}' não autorizado.")
         return {"status": "unauthorized"}
 
     # Processa em background para responder imediatamente 200 OK ao webhook da Evolution

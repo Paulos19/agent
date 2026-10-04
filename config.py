@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     # Segurança & Acesso
     ALLOWED_USERS: str = ""
+    GUEST_USERS: str = Field(default="", validation_alias=AliasChoices("GUEST_USERS", "MEDIA_GUEST_USERS", "GUEST_MEDIA_USERS"))
     WORKER_SECRET: str = Field(default="devops_secret_token_123", validation_alias=AliasChoices("WORKER_SECRET", "NODE_TOKEN"))
     VPS_WS_URL: Optional[str] = Field(default="wss://agent.phdev.top/ws/worker", validation_alias=AliasChoices("VPS_WS_URL", "NODE_WS_URL"))
 
@@ -74,6 +75,28 @@ class Settings(BaseSettings):
         if not self.ALLOWED_USERS:
             return set()
         items = [u.strip() for u in self.ALLOWED_USERS.split(",") if u.strip()]
+        result = set(items)
+        
+        # Normalização inteligente para números do Brasil (com e sem o 9º dígito)
+        for item in items:
+            clean = "".join(filter(str.isdigit, item))
+            if clean.startswith("55") and len(clean) == 13:
+                # 55 + DDD (2) + 9 + 8 dígitos -> Gera versão sem o 9
+                sem_9 = clean[:4] + clean[5:]
+                result.add(sem_9)
+            elif clean.startswith("55") and len(clean) == 12:
+                # 55 + DDD (2) + 8 dígitos -> Gera versão com o 9
+                com_9 = clean[:4] + "9" + clean[4:]
+                result.add(com_9)
+
+        return result
+
+    @property
+    def guest_users_set(self) -> Set[str]:
+        """Retorna uma lista limpa dos IDs e números autorizados exclusivamente para download de mídia com normalização de 9º dígito BR."""
+        if not self.GUEST_USERS:
+            return set()
+        items = [u.strip() for u in self.GUEST_USERS.split(",") if u.strip()]
         result = set(items)
         
         # Normalização inteligente para números do Brasil (com e sem o 9º dígito)

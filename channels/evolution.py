@@ -79,22 +79,35 @@ def extract_evolution_message(payload: Dict[str, Any]) -> Tuple[Optional[str], O
     # Extrai apenas os dígitos do número do destinatário/remetente
     clean_number = re.sub(r"\D", "", target_jid.split("@")[0])
     allowed = settings.allowed_users_set
+    guests = settings.guest_users_set
 
     # =========================================================================
     # REGRAS CRÍTICAS DE PRIVACIDADE E FILTRAGEM (WHATSAPP PESSOAL)
     # =========================================================================
+    is_owner = (clean_number in allowed) if allowed else True
+    is_guest = (clean_number in guests)
+
+    if not is_owner and not is_guest:
+        # Número não autorizado nem como dono nem como convidado de mídia: descarta imediatamente
+        return None, None, None
+
     if is_from_me:
         # Mensagem enviada pelo próprio usuário no app do WhatsApp.
         # REGRA MANDATÓRIA: Só processa se for no chat consigo mesmo ("Message Yourself" / "Você")!
-        # Se remote_jid for outra pessoa (amigo, cliente, familiar), o usuário está conversando
+        # Se remote_jid for outra pessoa (amigo, cliente, familiar ou convidado), o usuário está conversando
         # com outra pessoa e o bot JAMAIS deve se intrometer ou responder!
-        if allowed and clean_number not in allowed:
+        if not is_owner:
             return None, None, None
     else:
         # Mensagem recebida de fora (alguém mandando mensagem para o WhatsApp do usuário).
-        # Só deve responder se o remetente for um número expressamente autorizado (ex: outro chip cadastrado).
-        if allowed and clean_number not in allowed:
-            return None, None, None
+        if is_guest and not is_owner:
+            # CONVIDADO DE MÍDIA:
+            # O agente só deve interagir se houver um link de mídia explícito (YouTube, Reels, TikTok, etc.)
+            # Se a mensagem não contiver link, permanece em SILÊNCIO TOTAL para evitar conflitos!
+            from tools.youtube_downloader import extract_media_url
+            media_url = extract_media_url(text)
+            if not media_url:
+                return None, None, None
 
     return target_jid, clean_number, text
 

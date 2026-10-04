@@ -10,6 +10,22 @@ from tools.music_tagger import enrich_mp3_metadata
 from config import settings
 from channels import send_channel_media
 
+MEDIA_URL_REGEX = re.compile(
+    r'https?://(?:www\.)?(?:[a-zA-Z0-9-]+\.)*(?:youtube\.com|youtu\.be|instagram\.com|tiktok\.com|twitter\.com|x\.com|facebook\.com|fb\.watch|soundcloud\.com|pinterest\.com|pin\.it)[^\s>"\')]*',
+    re.IGNORECASE
+)
+
+def extract_media_url(text: str) -> Optional[str]:
+    """Extrai URL suportada de mídia (YouTube, Instagram, TikTok, Twitter/X, etc.) presente no texto."""
+    if not text:
+        return None
+    match = MEDIA_URL_REGEX.search(text)
+    if match:
+        url = match.group(0).rstrip('.,;!?)]}"\'')
+        return url
+    return None
+
+
 def _format_duration(seconds: Optional[int]) -> str:
     """Formata duração em segundos para HH:MM:SS ou MM:SS."""
     if not seconds:
