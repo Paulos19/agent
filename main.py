@@ -337,6 +337,35 @@ async def api_download_youtube(
     )
     return {"status": "success", "result": result_text}
 
+@app.post("/api/upload_temp")
+async def api_upload_temp(
+    file: UploadFile = File(...),
+    token: str = Query(...)
+):
+    """Permite ao worker local enviar arquivos (screenshots, áudios, .zip) para a VPS."""
+    if token != settings.WORKER_SECRET:
+        raise HTTPException(status_code=403, detail="Token inválido")
+
+    from tools.temp_storage import get_storage_dir, register_temp_file, get_download_url
+    storage_dir = get_storage_dir()
+    save_path = storage_dir / file.filename
+
+    content = await file.read()
+    save_path.write_bytes(content)
+
+    reg = register_temp_file(
+        file_path=save_path,
+        filename=file.filename,
+        ttl_hours=48
+    )
+
+    return {
+        "status": "success",
+        "file_path": str(reg["actual_path"]),
+        "download_url": get_download_url(reg["token"]),
+        "token": reg["token"]
+    }
+
 async def process_user_request(user_id: str, channel: str, prompt: str):
     """Executa a solicitação do usuário com suporte a streaming de progresso e concorrência."""
     logger.info(f"[Iniciando Processamento] Usuário: {user_id} | Canal: {channel} | Prompt: {prompt[:60]}...")

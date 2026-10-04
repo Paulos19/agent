@@ -382,7 +382,7 @@ def _run_playlist_dlp(url: str, quality: str, out_dir: Path, max_tracks: int = 5
     # 2. Localiza os arquivos MP3 gerados
     mp3_files = sorted(list(pl_dir.glob("*.mp3")), key=lambda f: f.name)
     if not mp3_files:
-        raise RuntimeError("Nenhuma faixa pôde ser extraída da playlist.")
+        raise RuntimeError("Nenhuma faixa pôde ser extraída na VPS (possível bloqueio antibot do YouTube: sign in to confirm you're not a bot).")
 
     total_count = len(mp3_files)
 
@@ -452,16 +452,26 @@ async def download_playlist_media(
     except Exception as e:
         err_str = str(e)
         from agent.nodes import node_manager
-        is_bot_block = any(k in err_str.lower() for k in ["not a bot", "sign in", "bot", "403", "forbidden"])
-        if is_bot_block and node_manager.is_connected:
+        # Se falhou na VPS e o worker do PC pessoal estiver online, desvia para a conexão residencial!
+        if node_manager.is_connected:
             try:
+                if user_id:
+                    await send_channel_message(
+                        user_id,
+                        channel or "whatsapp",
+                        "🔄 _Bloqueio do YouTube detectado no servidor. Desviando o download da playlist automaticamente pelo seu PC pessoal via conexão residencial..._"
+                    )
                 import json
-                pc_res = await node_manager.execute_on_pc("download_playlist_media_local", {
-                    "url": clean_url,
-                    "quality": quality,
-                    "max_tracks": max_tracks,
-                    "upload_to_vps": True
-                })
+                pc_res = await node_manager.execute_on_pc(
+                    action="download_playlist_media_local",
+                    args={
+                        "url": clean_url,
+                        "quality": quality,
+                        "max_tracks": max_tracks,
+                        "upload_to_vps": True
+                    },
+                    timeout=600
+                )
                 res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
                 if res_data.get("success"):
                     result = res_data["result"]
@@ -471,7 +481,13 @@ async def download_playlist_media(
             except Exception as pc_err:
                 return f"❌ *Falha ao extrair playlist pelo PC:* `{pc_err}`"
         else:
-            return f"❌ *Erro ao processar playlist:* {err_str}"
+            return (
+                f"⚠️ *Bloqueio Antibot do YouTube no Servidor!*\n\n"
+                f"O YouTube bloqueou o IP do datacenter da VPS exigindo autenticação (`Sign in to confirm you're not a bot`).\n\n"
+                f"💡 *Como resolver de forma definitiva:*\n"
+                f"1. Mantenha o script `worker.py` rodando no seu PC Windows para o assistente usar sua internet residencial automaticamente!\n"
+                f"2. Ou coloque o arquivo `cookies.txt` do seu YouTube logado na pasta `/workspace/cookies.txt` da VPS."
+            )
 
     file_path = result["file_path"]
     file_name = result["file_name"]
