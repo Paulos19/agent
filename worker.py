@@ -264,6 +264,34 @@ def take_pc_screenshot(out_path: str = None) -> Path:
         if h_default:
             u32.CloseDesktop(h_default)
 
+def manage_pc_power(action: str, timer_minutes: int = 0) -> str:
+    """Controla bloqueio de tela, suspensão e desligamento do Windows."""
+    act = action.lower().strip()
+    if act == "lock":
+        import ctypes
+        res = ctypes.windll.user32.LockWorkStation()
+        if res:
+            return "🔒 Tela do Windows bloqueada com sucesso!"
+        return "⚠️ Não foi possível bloquear a estação de trabalho."
+    elif act == "suspend":
+        import subprocess
+        ps_cmd = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false)"
+        subprocess.Popen(["powershell", "-NoProfile", "-Command", ps_cmd])
+        return "🌙 Comando de suspensão enviado ao Windows. O computador entrará em repouso."
+    elif act == "shutdown":
+        import subprocess
+        seconds = max(0, timer_minutes * 60)
+        cmd = f'shutdown.exe /s /t {seconds} /c "Desligamento agendado pelo Assistente"'
+        subprocess.run(cmd, shell=True)
+        if timer_minutes > 0:
+            return f"⏳ Desligamento do PC agendado para daqui a {timer_minutes} minuto(s) ({seconds}s). Use /cancelardesligar para abortar."
+        return "🛑 Desligando o computador imediatamente."
+    elif act in ["cancel_shutdown", "abort"]:
+        import subprocess
+        subprocess.run("shutdown.exe /a", shell=True)
+        return "✅ Desligamento agendado cancelado com sucesso no Windows!"
+    return f"Ação de energia desconhecida: '{action}'"
+
 async def handle_action(action: str, args: dict, ws=None, call_id: str = None) -> str:
     """Roteia as ações recebidas da VPS para as funções locais com suporte a streaming de progresso."""
     log_print(f"[bold cyan]⚡ Executando ação local:[/bold cyan] [yellow]{action}[/yellow]")
@@ -426,6 +454,15 @@ git push origin {b}
                     pass
 
             res = json.dumps({"success": True, "result": result_data})
+        except Exception as e:
+            res = json.dumps({"success": False, "error": str(e)})
+    elif action == "manage_pc_power":
+        power_action = args.get("power_action") or args.get("action", "lock")
+        timer_min = args.get("timer_minutes", 0)
+        await send_progress(f"⚡ Executando comando de energia no PC: {power_action}...")
+        try:
+            msg = manage_pc_power(power_action, timer_min)
+            res = json.dumps({"success": True, "message": msg})
         except Exception as e:
             res = json.dumps({"success": False, "error": str(e)})
     else:

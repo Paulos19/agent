@@ -671,6 +671,28 @@ AGENT_TOOLS = [
                 "required": []
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_pc_power",
+            "description": "Controla a sessão de energia e segurança do computador pessoal Windows do usuário. Permite bloquear a tela instantaneamente ('lock'), suspender o computador para economizar energia ('suspend'), agendar desligamento ('shutdown' com 'timer_minutes'), ou cancelar um desligamento agendado ('cancel_shutdown').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["lock", "suspend", "shutdown", "cancel_shutdown"],
+                        "description": "Ação a ser executada no computador do usuário."
+                    },
+                    "timer_minutes": {
+                        "type": "integer",
+                        "description": "Opcional. Tempo em minutos para desligamento programado (ex: 15, 30, 60). Padrão: 0 (imediato)."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
     }
 ]
 
@@ -912,6 +934,18 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         return (
             "Capturando tela do PC",
             "📸 Tirando print da tela do seu computador Windows agora... Te envio a imagem em instantes!"
+        )
+    elif fn_name == "manage_pc_power":
+        act = args.get("action", "lock")
+        labels = {
+            "lock": "Bloqueando tela do PC",
+            "suspend": "Suspendendo PC",
+            "shutdown": "Agendando desligamento",
+            "cancel_shutdown": "Cancelando desligamento"
+        }
+        return (
+            labels.get(act, "Gerenciando energia do PC"),
+            f"⚡ Enviando comando de energia ({act}) para o seu computador Windows..."
         )
     return (f"Executando {fn_name}", "")
 
@@ -1203,6 +1237,21 @@ async def run_agent_loop(
                                 tool_output = f"Print capturado no PC, mas arquivo não localizado na VPS ({vps_file_path})."
                         else:
                             tool_output = f"Falha ao capturar screenshot no PC: {res_data.get('error', 'desconhecido')}"
+                elif fn_name == "manage_pc_power":
+                    if not node_manager.is_connected:
+                        tool_output = "ERRO: O computador pessoal do usuário está offline no momento (worker Windows desconectado)."
+                    else:
+                        act = args.get("action", "lock")
+                        timer_m = args.get("timer_minutes", 0)
+                        pc_res = await node_manager.execute_on_pc("manage_pc_power", {
+                            "power_action": act,
+                            "timer_minutes": timer_m
+                        })
+                        res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
+                        if res_data.get("success"):
+                            tool_output = res_data.get("message", "Comando de energia executado com sucesso no PC!")
+                        else:
+                            tool_output = f"Falha ao executar comando de energia no PC: {res_data.get('error', 'desconhecido')}"
                 else:
                     tool_output = f"[ERRO]: Ferramenta '{fn_name}' desconhecida."
             except Exception as tool_err:

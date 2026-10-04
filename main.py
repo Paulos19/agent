@@ -384,7 +384,49 @@ async def process_user_request(user_id: str, channel: str, prompt: str):
             await send_channel_message(user_id, channel, f"❌ Erro ao capturar tela: `{str(e)}`")
         return
 
-    # 3. Se JÁ HOUVER uma tarefa ativa para este usuário
+    # 3. Comandos rápidos de controle do PC (/bloquear, /suspender, /desligar, /cancelardesligar)
+    cmd_lower = prompt.strip().lower()
+    if cmd_lower in ["/bloquear", "/lock"]:
+        if not node_manager.is_connected:
+            await send_channel_message(user_id, channel, "⚠️ *Seu PC está offline no momento!*\n\nO worker local não está conectado à VPS.")
+            return
+        pc_res = await node_manager.execute_on_pc("manage_pc_power", {"power_action": "lock"})
+        res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
+        await send_channel_message(user_id, channel, res_data.get("message", "🔒 Tela do Windows bloqueada!"))
+        return
+
+    if cmd_lower in ["/suspender", "/dormir", "/sleep"]:
+        if not node_manager.is_connected:
+            await send_channel_message(user_id, channel, "⚠️ *Seu PC está offline no momento!*\n\nO worker local não está conectado à VPS.")
+            return
+        pc_res = await node_manager.execute_on_pc("manage_pc_power", {"power_action": "suspend"})
+        res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
+        await send_channel_message(user_id, channel, res_data.get("message", "🌙 PC entrando em repouso!"))
+        return
+
+    if cmd_lower in ["/cancelardesligar", "/cancelar_desligar", "/abort_shutdown"]:
+        if not node_manager.is_connected:
+            await send_channel_message(user_id, channel, "⚠️ *Seu PC está offline no momento!*")
+            return
+        pc_res = await node_manager.execute_on_pc("manage_pc_power", {"power_action": "cancel_shutdown"})
+        res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
+        await send_channel_message(user_id, channel, res_data.get("message", "✅ Desligamento cancelado com sucesso no Windows!"))
+        return
+
+    if cmd_lower.startswith(("/desligar", "/shutdown")):
+        if not node_manager.is_connected:
+            await send_channel_message(user_id, channel, "⚠️ *Seu PC está offline no momento!*")
+            return
+        parts = cmd_lower.split()
+        minutes = 0
+        if len(parts) > 1 and parts[1].isdigit():
+            minutes = int(parts[1])
+        pc_res = await node_manager.execute_on_pc("manage_pc_power", {"power_action": "shutdown", "timer_minutes": minutes})
+        res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
+        await send_channel_message(user_id, channel, res_data.get("message", "🛑 Comando de desligamento enviado."))
+        return
+
+    # 4. Se JÁ HOUVER uma tarefa ativa para este usuário
     if task_manager.is_busy(user_id):
         # A) Pergunta de status (ex: "como tá?", "status", "tá em que parte?", "falta muito?")
         if task_manager.is_status_query(prompt):
@@ -468,6 +510,14 @@ async def worker_websocket(websocket: WebSocket, token: str = Query(...)):
         client_info = init_data.get("info", {})
         node_manager.register_pc(websocket, client_info)
 
+        # Notificação proativa de conexão do PC no WhatsApp
+        for target_user in settings.allowed_users_set:
+            user_jid = target_user if "@" in target_user else f"{target_user}@s.whatsapp.net"
+            h_name = client_info.get("hostname", "Windows")
+            os_desc = client_info.get("os", "Windows")
+            msg_conn = f"🟢 *Seu PC Pessoal Conectou!* ({h_name} - {os_desc})\n\nO assistente agora tem controle total deste computador (execução local, prints e comandos)."
+            asyncio.create_task(send_channel_message(user_jid, "whatsapp", msg_conn))
+
         while True:
             data = await websocket.receive_json()
             if data.get("type") == "ping":
@@ -479,7 +529,13 @@ async def worker_websocket(websocket: WebSocket, token: str = Query(...)):
     except Exception as e:
         logger.error(f"[WebSocket] Erro na comunicação com o worker: {e}")
     finally:
+        was_connected = node_manager.is_connected
         node_manager.unregister_pc()
+        if was_connected:
+            for target_user in settings.allowed_users_set:
+                user_jid = target_user if "@" in target_user else f"{target_user}@s.whatsapp.net"
+                msg_disc = "🟡 *Seu PC Pessoal Desconectou ou Suspendeu.*\n\nO assistente continua ativo na nuvem pela VPS."
+                asyncio.create_task(send_channel_message(user_jid, "whatsapp", msg_disc))
 
 @app.post("/webhook/evolution")
 async def evolution_webhook(request: Request, background_tasks: BackgroundTasks):
