@@ -125,28 +125,52 @@ def _get_youtube_cookies() -> Optional[str]:
             return str(Path(c).resolve())
     return None
 
+def _detect_platform(url: str) -> str:
+    """Identifica a plataforma da URL de mídia."""
+    u = url.lower()
+    if any(k in u for k in ["youtube.com", "youtu.be"]):
+        return "YouTube"
+    if "instagram.com" in u:
+        return "Instagram"
+    if "tiktok.com" in u:
+        return "TikTok"
+    if any(k in u for k in ["twitter.com", "x.com"]):
+        return "Twitter/X"
+    if any(k in u for k in ["facebook.com", "fb.watch"]):
+        return "Facebook"
+    if "pinterest.com" in u:
+        return "Pinterest"
+    return "Mídia Online"
+
 def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict[str, Any]:
-    """Execução síncrona do yt-dlp com detecção de ffmpeg, clientes móveis e fallback de cookies."""
+    """Execução síncrona do yt-dlp com suporte universal (YouTube, Instagram Reels, TikTok, Twitter/X)."""
     ffmpeg_loc = _get_ffmpeg_location()
     out_template = str(out_dir / "%(title).200s.%(ext)s")
 
-    # Lista de estratégias de extração em ordem de resiliência:
-    # Os clientes "android" e "ios" foram revogados pelo YouTube (2025).
-    # Clientes suportados nessa versão do yt-dlp (2026.x):
-    # 1. visionos      — cliente jsless padrão, não requer JS runtime, estável em datacenter
-    # 2. web_creator   — YouTube Studio/Creator, sem bot-check em datacenter
-    # 3. tv_downgraded — TV legado, autenticado, evita bloqueios de datacenter
-    # 4. web           — Fallback padrão web
-    strategies = [
-        {"extractor_args": {"youtube": {"player_client": ["visionos"]}}},
-        {"extractor_args": {"youtube": {"player_client": ["web_creator"]}}},
-        {"extractor_args": {"youtube": {"player_client": ["tv_downgraded"]}}},
-        {"extractor_args": {"youtube": {"player_client": ["web"]}}},
-    ]
+    platform = _detect_platform(url)
+    is_youtube = platform == "YouTube"
 
-    cookies_file = _get_youtube_cookies()
-    if cookies_file:
-        strategies.append({"cookiefile": cookies_file})
+    if is_youtube:
+        # Estratégias de bypass específicas para YouTube
+        strategies = [
+            {"extractor_args": {"youtube": {"player_client": ["visionos"]}}},
+            {"extractor_args": {"youtube": {"player_client": ["web_creator"]}}},
+            {"extractor_args": {"youtube": {"player_client": ["tv_downgraded"]}}},
+            {"extractor_args": {"youtube": {"player_client": ["web"]}}},
+        ]
+        cookies_file = _get_youtube_cookies()
+        if cookies_file:
+            strategies.append({"cookiefile": cookies_file})
+    else:
+        # Instagram Reels, TikTok (sem marca d'água), Twitter/X, etc.
+        strategies = [
+            {
+                "http_headers": {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                }
+            }
+        ]
 
     last_error = None
     for strat in strategies:
@@ -312,7 +336,7 @@ async def download_youtube_media(
                     f"3. Coloque o `cookies.txt` na pasta `/workspace/cookies.txt` da VPS (ou envie no chat).\n"
                     f"4. Ou mantenha o script `worker.py` rodando no seu PC local para o assistente usar sua internet residencial automaticamente!"
                 )
-            return f"[ERRO AO EXTRAIR DO YOUTUBE]: {err_str}"
+            return f"[ERRO AO EXTRAIR MÍDIA]: {err_str}"
 
     file_path = result["file_path"]
     file_name = result["file_name"]
@@ -321,6 +345,9 @@ async def download_youtube_media(
     title = result["title"]
     uploader = result["uploader"]
     fmt = result["format"]
+    platform = _detect_platform(clean_url)
+    file_size_bytes = result.get("file_size", 0)
+    file_size_mb = file_size_bytes / (1024 * 1024)
 
     # Registra no storage temporário da VPS com retenção de 48 horas
     storage_record = register_temp_file(
@@ -329,69 +356,55 @@ async def download_youtube_media(
         metadata={
             "title": title,
             "uploader": uploader,
-            "duration": duration_formatted
+            "duration": duration_formatted,
+            "platform": platform
         },
         ttl_hours=48
     )
     token = storage_record["token"]
     main_download_link = get_download_url(token)
 
-    # Envio opcional direto para o WhatsApp/Telegram se solicitado (documento ou player)
+    # =========================================================================
+    # ENTREGA DUPLA MANDATÓRIA (Player no WhatsApp se <= 25MB + Link de 48h)
+    # =========================================================================
     sent_media_status = ""
-    if send_to_chat and user_id and send_mode != "link":
+    if send_to_chat and user_id:
         ch = channel or "whatsapp"
-        results_sent = []
-
-        if send_mode in ["document", "both"]:
-            doc_caption = (
-                f"📁 *{title}*\n"
-                f"👤 Canal: {uploader} | ⏱️ {duration_formatted} | 📦 {file_size_formatted}"
-            )
+        if file_size_mb <= 25.0:
+            media_type = "audio" if fmt == "MP3" else "video"
+            media_caption = f"🎧 *{title}*" if fmt == "MP3" else f"🎬 *{title}*"
             try:
-                ok_doc = await send_channel_media(
+                ok_media = await send_channel_media(
                     recipient=user_id,
                     channel=ch,
                     file_path=str(file_path),
-                    caption=doc_caption,
-                    media_type="document",
+                    caption=media_caption,
+                    media_type=media_type,
                     file_name=file_name
                 )
-                if ok_doc:
-                    results_sent.append("📁 Arquivo anexado")
-            except Exception:
-                pass
+                if ok_media:
+                    action_word = "ouvir" if fmt == "MP3" else "assistir"
+                    sent_media_status = f"\n📲 *Player no Chat:* ✅ Enviado acima para você {action_word} agora!"
+            except Exception as send_err:
+                import logging
+                logging.getLogger(__name__).warning(f"[Download] Erro ao enviar mídia direta: {send_err}")
+        else:
+            sent_media_status = f"\n📲 *Envio no Chat:* ℹ️ Arquivo com {file_size_formatted} (acima do limite do chat de 25MB); use o link abaixo para baixar!"
 
-        if send_mode in ["chat_player", "both"]:
-            chat_type = "audio" if fmt == "MP3" else "video"
-            chat_caption = f"🎧 *{title}* (Player no Chat)"
-            try:
-                ok_player = await send_channel_media(
-                    recipient=user_id,
-                    channel=ch,
-                    file_path=str(file_path),
-                    caption=chat_caption,
-                    media_type=chat_type,
-                    file_name=file_name
-                )
-                if ok_player:
-                    results_sent.append("🎧 Player no chat")
-            except Exception:
-                pass
-
-        if results_sent:
-            sent_media_status = f"\n📲 *Envio no Chat:* ✅ {' e '.join(results_sent)} entregue(s)!"
+    action_label = "ouvir" if fmt == "MP3" else "assistir"
+    icon = "🎵" if fmt == "MP3" else "🎬"
 
     response = (
-        f"🎬 *Extração do YouTube Concluída com Sucesso!*\n\n"
+        f"{icon} *Extração Concluída com Sucesso!* ({platform})\n\n"
         f"📌 *Título:* {title}\n"
         f"👤 *Canal/Autor:* {uploader}\n"
         f"⏱️ *Duração:* {duration_formatted}\n"
         f"📦 *Formato:* {fmt} ({file_size_formatted})\n"
-        f"⏳ *Validade:* 48 horas (Armazenamento temporário na VPS)\n\n"
-        f"⬇️ *CLIQUE NO LINK PARA BAIXAR NO SEU CELULAR:*\n"
+        f"⏳ *Validade:* 48 horas (Armazenamento na VPS)\n\n"
+        f"⬇️ *CLIQUE NO LINK PARA SALVAR NA SUA PASTA DOWNLOADS:*\n"
         f"{main_download_link}\n\n"
-        f"💡 _Ao tocar no link acima, o download iniciará direto na pasta **Download** do seu smartphone. "
-        f"Assim, tocadores como Samsung Music, Xiaomi e YouTube Music reconhecem a faixa na hora "
-        f"e você pode enviá-la como áudio nativo quando quiser!_{sent_media_status}"
+        f"💡 _O arquivo foi enviado acima para você {action_label} na hora! "
+        f"Para salvá-lo na pasta **Download** permanente do seu aparelho (sendo reconhecido em players nativos como Samsung Music, Xiaomi, Apple Music ou VLC), toque no link acima._"
+        f"{sent_media_status}"
     )
     return response

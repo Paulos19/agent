@@ -322,21 +322,22 @@ git push origin {b}
         fmt = args.get("format_type", "mp3")
         qual = args.get("quality", "best")
 
-        await send_progress("🎵 Extraindo áudio no seu PC local (IP Residencial)...")
+        await send_progress(f"🎵 Extraindo {fmt.upper()} no seu PC local (IP Residencial)...")
         local_temp = Path(__file__).parent / "storage" / "temp_local"
         local_temp.mkdir(parents=True, exist_ok=True)
 
         try:
             dl_result = await asyncio.to_thread(_run_yt_dlp, url, fmt, qual, local_temp)
+            local_file_path = Path(dl_result["file_path"])
             if args.get("upload_to_vps"):
-                await send_progress("☁️ Enviando MP3 para a VPS para gerar o link de 48h...")
+                await send_progress("☁️ Enviando arquivo para a VPS para gerar o link de 48h...")
                 import httpx
                 vps_url = VPS_WS_URL or "wss://agent.phdev.top/ws/worker"
                 domain_match = re.search(r'wss?://([^/]+)', vps_url)
                 vps_host = domain_match.group(1) if domain_match else "agent.phdev.top"
                 upload_endpoint = f"https://{vps_host}/api/upload_temp?token={WORKER_SECRET}"
 
-                with open(dl_result["file_path"], "rb") as f:
+                with open(local_file_path, "rb") as f:
                     files = {"file": (dl_result["file_name"], f, "application/octet-stream")}
                     async with httpx.AsyncClient(timeout=180.0) as client:
                         resp = await client.post(upload_endpoint, files=files)
@@ -350,9 +351,8 @@ git push origin {b}
 
                 # Limpa arquivo temporário local para economizar espaço
                 try:
-                    p = Path(dl_result["file_path"])
-                    if p.exists():
-                        p.unlink()
+                    if local_file_path.exists():
+                        local_file_path.unlink()
                 except Exception:
                     pass
 

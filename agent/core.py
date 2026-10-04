@@ -625,13 +625,13 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "download_youtube_media",
-            "description": "Extrai vídeo ou áudio do YouTube através do link fornecido, converte com FFmpeg na nuvem (VPS) para MP3 (áudio de alta fidelidade) ou MP4 (vídeo com áudio integrado), armazena no storage temporário da VPS com validade de 48 horas (estilo Drive/WeTransfer) e gera um link temporário exclusivo para download direto no celular ou PC.",
+            "description": "Extrai vídeo ou áudio do YouTube, Instagram Reels, TikTok (sem marca d'água) ou Twitter/X através do link fornecido. Converte com FFmpeg na nuvem (VPS) para MP3 (com tags e capa enriquecidas via MusicBrainz/Spotify) ou MP4 (vídeo com áudio integrado). Realiza entrega dupla: envia a mídia diretamente no WhatsApp para reprodução imediata E gera um link temporário exclusivo (48 horas) para salvar direto na pasta Download do aparelho.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "URL do vídeo do YouTube (ex: 'https://www.youtube.com/watch?v=...', 'https://youtu.be/...', ou 'https://www.youtube.com/shorts/...')."
+                        "description": "URL do vídeo ou áudio (YouTube, Instagram Reels, TikTok, Twitter/X)."
                     },
                     "format_type": {
                         "type": "string",
@@ -653,7 +653,7 @@ AGENT_TOOLS = [
                     "send_mode": {
                         "type": "string",
                         "enum": ["link", "chat_player", "document", "both"],
-                        "description": "Modo de entrega: 'link' (padrão e recomendado para celular) gera link direto que baixa na pasta Download do aparelho para reconhecimento em players nativos; 'chat_player' envia player de áudio no chat; 'document' envia como anexo; 'both' envia arquivo + player."
+                        "description": "Modo de entrega: 'both' ou 'link' realiza entrega dupla (player no chat + link para a pasta Downloads)."
                     }
                 },
                 "required": ["url"]
@@ -795,18 +795,18 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
        - 'capture_and_analyze_design(url="...", focus="...")': Abre navegador headless, acessa qualquer URL (Aceternity, Linear, Stripe, Godly ou link do usuário), tira screenshot e extrai cores, tipografia e classes Tailwind.
        - 'search_pinterest_and_analyze_ui(query="...", project_path="...")': Abre navegador invisível, pesquisa templates e boards de UI/UX no Pinterest, remove popups/cookies, tira screenshot em alta definição dos melhores pins e usa visão multimodal para dissecar o design e sugerir melhorias práticas no projeto do usuário!
 
-     * EXTRAÇÃO DE VÍDEO E ÁUDIO DO YOUTUBE (ARMAZENAMENTO TEMPORÁRIO NA VPS - 48 HORAS):
-       - Você possui a ferramenta nativa 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True, send_mode="link")'.
-       - O processamento e armazenamento ocorrem 100% no storage temporário da VPS em '/workspace/storage/temp_downloads/'.
-       - PROIBIÇÃO ABSOLUTA: NUNCA execute comandos de terminal ('execute_terminal_command') para rodar yt-dlp ou salvar mídias na pasta Downloads do Windows (%USERPROFILE%/Downloads). Use SEMPRE E EXCLUSIVAMENTE a ferramenta 'download_youtube_media'. Ela gerencia internamente qualquer bypass antibot e garante que o arquivo fique na VPS com o link temporário de 48 horas.
-       - Sempre que o usuário enviar um link do YouTube ou pedir para extrair áudio, converter em MP3, baixar vídeo ou disponibilizar download:
-         1. Execute 'download_youtube_media' passando a URL do YouTube e o formato desejado ('mp3' para áudio ou 'mp4' para vídeo).
-         2. A ferramenta extrai com yt-dlp e FFmpeg na VPS e gera um link temporário exclusivo com retenção de 48 horas (estilo Drive/WeTransfer).
-         3. A entrega padrão é via LINK DIRETO TEMPORÁRIO ('send_mode="link"'): ao tocar no link pelo celular (Chrome/Safari), o arquivo é baixado direto para a pasta Download do aparelho, sendo reconhecido automaticamente nos aplicativos de música (Samsung Music, Xiaomi, VLC, etc.) e pronto para envio.
-         4. Se o usuário pedir especificamente player no chat ou documento anexado, use send_mode="chat_player", "document" ou "both".
-         5. Ao concluir, apresente o título, autor, duração, tamanho, a validade de 48 horas e o link direto de download destacado com instruções amigáveis.
+      * EXTRAÇÃO UNIVERSAL DE MÍDIA ONLINE (YOUTUBE, INSTAGRAM REELS, TIKTOK, TWITTER/X):
+        - Você possui a ferramenta nativa 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True)'.
+        - Aceita links de YouTube, Instagram Reels, TikTok (sem marca d'água) e Twitter/X.
+        - O processamento e armazenamento ocorrem 100% no storage temporário da VPS em '/workspace/storage/temp_downloads/'.
+        - PROIBIÇÃO ABSOLUTA: NUNCA execute comandos de terminal ('execute_terminal_command') para rodar yt-dlp ou salvar mídias na pasta Downloads do Windows (%USERPROFILE%/Downloads). Use SEMPRE E EXCLUSIVAMENTE a ferramenta 'download_youtube_media'. Ela gerencia internamente qualquer bypass antibot e garante que o arquivo fique na VPS com o link temporário de 48 horas.
+        - Sempre que o usuário enviar um link de mídia ou pedir para extrair áudio, converter em MP3, baixar vídeo ou disponibilizar download:
+          1. Execute 'download_youtube_media' passando a URL (YouTube, Reels, TikTok ou Twitter/X) e o formato desejado ('mp3' para áudio ou 'mp4' para vídeo).
+          2. A ferramenta extrai com yt-dlp e FFmpeg na VPS e gera um link temporário exclusivo com retenção de 48 horas (estilo Drive/WeTransfer).
+          3. A ENTREGA É DUPLA: a ferramenta envia a mídia diretamente no WhatsApp para tocar/assistir na hora E fornece o link direto para download na pasta permanente Download do smartphone.
+          4. Ao concluir, apresente o título, autor, duração, tamanho, a validade de 48 horas e o link direto de download destacado com instruções amigáveis.
 
-   - REQUISITOS TÉCNICOS:
+      - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
      * Use sempre Tailwind CSS com utilities de backdrop-blur e gradientes sofisticados.
 """
@@ -890,9 +890,11 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         )
     elif fn_name == "download_youtube_media":
         fmt = args.get("format_type", "mp3").upper()
+        url = args.get("url", "").lower()
+        plat = "Instagram" if "instagram" in url else ("TikTok" if "tiktok" in url else ("Twitter/X" if any(k in url for k in ["twitter", "x.com"]) else "YouTube"))
         return (
-            f"Baixando e convertendo YouTube ({fmt})",
-            f"🎬 Baixando conteúdo do YouTube e convertendo em {fmt} de alta qualidade... Te envio o arquivo e o link em instantes! 🎧"
+            f"Baixando e convertendo {plat} ({fmt})",
+            f"🎬 Baixando conteúdo do {plat} e convertendo em {fmt}... Te envio a mídia no chat e o link da pasta Downloads em instantes! 🎧"
         )
     return (f"Executando {fn_name}", "")
 
