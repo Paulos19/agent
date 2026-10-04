@@ -542,7 +542,7 @@ async def worker_loop():
     while True:
         try:
             log_print(f"[dim]Tentando conectar ao servidor WebSocket na VPS...[/dim]")
-            async with websockets.connect(ws_url, ping_interval=15, ping_timeout=15) as ws:
+            async with websockets.connect(ws_url, ping_interval=None, ping_timeout=None) as ws:
                 log_print(f"[bold green]✔ CONECTADO COM SUCESSO À VPS![/bold green] O agente agora tem controle total deste PC.")
                 
                 # Envia handshake com informações do PC
