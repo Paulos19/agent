@@ -185,10 +185,10 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
         ydl_opts.update(strat)
 
         if format_type.lower() == "mp3":
-            # Extração de áudio convertida para MP3
+            # Extração de áudio convertida para MP3 (aceita qualquer codec e converte para MP3)
             audio_quality = "320" if "320" in quality else ("128" if "128" in quality else "192")
             ydl_opts.update({
-                "format": "bestaudio/best",
+                "format": "ba/b",
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
@@ -196,9 +196,9 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
                 }],
             })
         else:
-            # Extração de vídeo MP4 com melhor combinação de áudio e vídeo
+            # Extração de vídeo universal (bv*+ba/b) com merge automático para MP4 via FFmpeg
             ydl_opts.update({
-                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "format": "bv*+ba/b",
                 "merge_output_format": "mp4",
             })
 
