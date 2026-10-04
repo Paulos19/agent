@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     # DevOps: GitHub Automation
     GITHUB_TOKEN: Optional[str] = None
     GITHUB_USERNAME: str = "Paulos19"
+    GITHUB_WEBHOOK_SECRET: Optional[str] = None  # Secret definido no webhook do GitHub
 
     # UI/UX & Design Intelligence: Mobbin
     MOBBIN_API_KEY: Optional[str] = Field(default=None, validation_alias=AliasChoices("MOBBIN_API_KEY", "MOBBIN_TOKEN"))

@@ -509,5 +509,73 @@ async def direct_execute(req: DirectExecRequest, background_tasks: BackgroundTas
     reply = await run_agent_loop(user_prompt=req.prompt, user_id=req.user_id, channel="direct")
     return {"response": reply}
 
+@app.post("/webhook/github")
+async def github_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Recebe eventos de push do GitHub e dispara o redeploy automático no Easypanel.
+
+    Configuração no GitHub (Settings → Webhooks → Add webhook):
+      Payload URL  : https://agent.phdev.top/webhook/github
+      Content type : application/json
+      Secret       : valor de GITHUB_WEBHOOK_SECRET no .env
+      Events       : Just the push event
+    """
+    import hmac
+    import hashlib
+
+    # 1. Lê o corpo raw (necessário para validar a assinatura HMAC)
+    body = await request.body()
+
+    # 2. Valida assinatura HMAC-SHA256 do GitHub (X-Hub-Signature-256)
+    secret = settings.GITHUB_WEBHOOK_SECRET
+    if secret:
+        sig_header = request.headers.get("X-Hub-Signature-256", "")
+        expected = "sha256=" + hmac.new(
+            secret.encode(), body, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(sig_header, expected):
+            logger.warning("[GitHub Webhook] Assinatura inválida — requisição ignorada.")
+            raise HTTPException(status_code=401, detail="Assinatura inválida.")
+
+    # 3. Parseia o payload
+    try:
+        import json as _json
+        payload = _json.loads(body)
+    except Exception:
+        return {"status": "ignored", "reason": "invalid_json"}
+
+    event = request.headers.get("X-GitHub-Event", "")
+    ref = payload.get("ref", "")
+    repo_name = payload.get("repository", {}).get("full_name", "?")
+    pusher = payload.get("pusher", {}).get("name", "?")
+    commits = payload.get("commits", [])
+    commit_msg = commits[0].get("message", "").splitlines()[0] if commits else ""
+
+    logger.info(f"[GitHub Webhook] event={event} ref={ref} repo={repo_name} pusher={pusher}")
+
+    # 4. Só age em push para a branch main/master
+    if event != "push" or ref not in ("refs/heads/main", "refs/heads/master"):
+        return {"status": "ignored", "reason": f"event={event} ref={ref}"}
+
+    # 5. Dispara redeploy no Easypanel em background
+    deploy_webhook = settings.EASYPANEL_DEPLOY_WEBHOOK
+    if not deploy_webhook:
+        logger.warning("[GitHub Webhook] EASYPANEL_DEPLOY_WEBHOOK não configurado — redeploy ignorado.")
+        return {"status": "no_deploy_webhook"}
+
+    async def _trigger_deploy():
+        import httpx as _httpx
+        logger.info(f"[GitHub Webhook] Disparando redeploy no Easypanel para '{repo_name}' (commit: {commit_msg!r})")
+        try:
+            async with _httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(deploy_webhook)
+                logger.info(f"[GitHub Webhook] Easypanel respondeu: {resp.status_code}")
+        except Exception as deploy_err:
+            logger.error(f"[GitHub Webhook] Erro ao chamar deploy webhook: {deploy_err}")
+
+    background_tasks.add_task(_trigger_deploy)
+    logger.info(f"[GitHub Webhook] Redeploy agendado para '{repo_name}' — push de '{pusher}': {commit_msg!r}")
+    return {"status": "deploy_triggered", "repo": repo_name, "commit": commit_msg}
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host=settings.HOST, port=settings.PORT, reload=False)
