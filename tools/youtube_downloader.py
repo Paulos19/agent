@@ -1,6 +1,10 @@
 import asyncio
 import os
 import re
+import time
+import zipfile
+import shutil
+import logging
 import urllib.parse
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -9,6 +13,8 @@ import yt_dlp
 from tools.music_tagger import enrich_mp3_metadata
 from config import settings
 from channels import send_channel_media
+
+logger = logging.getLogger(__name__)
 
 MEDIA_URL_REGEX = re.compile(
     r'https?://(?:www\.)?(?:[a-zA-Z0-9-]+\.)*(?:youtube\.com|youtu\.be|instagram\.com|tiktok\.com|twitter\.com|x\.com|facebook\.com|fb\.watch|soundcloud\.com|pinterest\.com|pin\.it)[^\s>"\')]*',

@@ -348,19 +348,21 @@ async def process_user_request(user_id: str, channel: str, prompt: str):
     # 0. CONVIDADO DE MÍDIA (ACESSO RESTRITO EXCLUSIVAMENTE A DOWNLOAD)
     # =========================================================================
     if is_guest:
-        from tools.youtube_downloader import extract_media_url, download_youtube_media
+        from tools.youtube_downloader import extract_media_url, download_youtube_media, is_playlist_url
         media_url = extract_media_url(prompt)
         if not media_url:
             # Sem link de mídia: silêncio absoluto (não gera conflito em chats pessoais)
             logger.info(f"[Guest Ignored] Mensagem sem link de mídia de convidado {user_id}: {prompt[:30]}")
             return
 
-        # Notifica o convidado exclusivamente no chat dele
-        await send_channel_message(
-            user_id,
-            channel,
+        is_pl = is_playlist_url(media_url)
+        init_guest_msg = (
+            "📦 *Opa! Recebi sua playlist!*\n_Já estou baixando todas as faixas em MP3 e preparando o pacote .ZIP... Aguenta só um segundinho!_"
+            if is_pl else
             "🎵 *Opa! Recebi seu pedido de download!*\n_Já estou baixando e preparando a sua música em alta qualidade... Aguenta só um segundinho!_"
         )
+        # Notifica o convidado exclusivamente no chat dele
+        await send_channel_message(user_id, channel, init_guest_msg)
 
         try:
             p_lower = prompt.lower()
@@ -388,7 +390,7 @@ async def process_user_request(user_id: str, channel: str, prompt: str):
     # =========================================================================
     # FAST-PATH DE DOWNLOAD DE MÍDIA (INSTANTÂNEO PARA O OPERADOR)
     # =========================================================================
-    from tools.youtube_downloader import extract_media_url, download_youtube_media
+    from tools.youtube_downloader import extract_media_url, download_youtube_media, is_playlist_url
     detected_url = extract_media_url(prompt)
     if detected_url:
         p_clean = prompt.replace(detected_url, "").strip().lower()
@@ -402,14 +404,17 @@ async def process_user_request(user_id: str, channel: str, prompt: str):
         }
         is_download_cmd = not words or all(w in allowed_cmd_words for w in words)
         if is_download_cmd:
-            format_type = "mp4" if any(w in prompt.lower() for w in ["video", "vídeo", "clipe", "mp4", "assistir"]) else "mp3"
-            icon = "🎵" if format_type == "mp3" else "🎬"
-            action = "música" if format_type == "mp3" else "vídeo"
-            await send_channel_message(
-                user_id,
-                channel,
-                f"{icon} _Identifiquei o link! Baixando sua {action} em alta qualidade agora... Já te envio o arquivo e o link de 48h!_"
-            )
+            is_pl = is_playlist_url(detected_url)
+            if is_pl:
+                format_type = "mp3"
+                init_msg = "📦 _Identifiquei a playlist! Baixando todas as faixas em MP3 320kbps e compactando em .ZIP... Já te envio o link de 48h!_"
+            else:
+                format_type = "mp4" if any(w in prompt.lower() for w in ["video", "vídeo", "clipe", "mp4", "assistir"]) else "mp3"
+                icon = "🎵" if format_type == "mp3" else "🎬"
+                action = "música" if format_type == "mp3" else "vídeo"
+                init_msg = f"{icon} _Identifiquei o link! Baixando sua {action} em alta qualidade agora... Já te envio o arquivo e o link de 48h!_"
+
+            await send_channel_message(user_id, channel, init_msg)
             try:
                 reply = await download_youtube_media(
                     url=detected_url,
