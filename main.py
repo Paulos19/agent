@@ -316,6 +316,41 @@ class DownloadYouTubeRequest(BaseModel):
     user_id: Optional[str] = None
     channel: Optional[str] = None
 
+
+class AppLoginRequest(BaseModel):
+    phone: str
+
+class AppLoginResponse(BaseModel):
+    success: bool
+    token: Optional[str] = None
+    user_name: Optional[str] = None
+    error: Optional[str] = None
+
+@app.post("/api/auth/login", response_model=AppLoginResponse)
+async def api_auth_login(req: AppLoginRequest):
+    """Autentica o aplicativo mobile via telefone autorizado."""
+    raw_phone = req.phone or ""
+    cleaned_phone = "".join(c for c in raw_phone if c.isdigit())
+    allowed = [p.strip() for p in settings.ALLOWED_USERS.split(",") if p.strip()]
+    is_authorized = False
+    for num in allowed:
+        c_num = "".join(c for c in num if c.isdigit())
+        if c_num and (cleaned_phone == c_num or cleaned_phone.endswith(c_num) or c_num.endswith(cleaned_phone)):
+            is_authorized = True
+            break
+            
+    if not is_authorized:
+        return AppLoginResponse(
+            success=False,
+            error="Telefone não autorizado para acesso ao assistente."
+        )
+        
+    return AppLoginResponse(
+        success=True,
+        token=settings.WORKER_SECRET,
+        user_name="Paulo Henrique"
+    )
+
 @app.post("/api/download_youtube")
 async def api_download_youtube(
     req: DownloadYouTubeRequest,
