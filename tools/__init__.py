@@ -46,12 +46,13 @@ __all__ = [
     "capture_and_analyze_design",
     "search_pinterest_and_analyze_ui",
     "download_youtube_media",
-    "download_playlist_media"
+    "download_playlist_media",
+    "process_media_for_api"
 ]
 
 from .mobbin_tool import search_mobbin_screens
 from .visual_inspector import capture_and_analyze_design, search_pinterest_and_analyze_ui
-from .youtube_downloader import download_youtube_media, download_playlist_media
+from .youtube_downloader import download_youtube_media, download_playlist_media, process_media_for_api
 
 
 

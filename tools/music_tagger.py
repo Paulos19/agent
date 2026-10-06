@@ -319,6 +319,12 @@ def enrich_mp3_metadata(file_path: Path, yt_info: dict) -> dict:
         comment=f"Baixado via AssistenteBot | {yt_info.get('webpage_url', '')}",
     )
 
+    cover_url = None
+    if release_id:
+        cover_url = f"https://coverartarchive.org/release/{release_id}/front-500"
+    if not cover_url:
+        cover_url = _best_thumbnail_url(yt_info)
+
     return {
         "title": final_title,
         "artist": final_artist,
@@ -327,4 +333,5 @@ def enrich_mp3_metadata(file_path: Path, yt_info: dict) -> dict:
         "track_number": final_track,
         "genre": final_genre,
         "cover_source": "musicbrainz" if (release_id and cover_bytes) else ("youtube" if cover_bytes else "none"),
+        "cover_url": cover_url,
     }

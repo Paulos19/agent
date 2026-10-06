@@ -251,6 +251,7 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
 
                 if downloaded_file and downloaded_file.exists():
                     # Enriquece metadados ID3 do MP3 (capa, artista, álbum, ano, gênero)
+                    tag_result = None
                     if expected_ext == "mp3":
                         try:
                             tag_result = enrich_mp3_metadata(downloaded_file, info)
@@ -260,6 +261,13 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
                         except Exception as tag_err:
                             import logging
                             logging.getLogger(__name__).warning(f"[Tagger] Falha ao enriquecer metadados: {tag_err}")
+
+                    thumbnail_url = None
+                    if expected_ext == "mp3" and isinstance(tag_result, dict):
+                        thumbnail_url = tag_result.get("cover_url")
+                    if not thumbnail_url:
+                        from tools.music_tagger import _best_thumbnail_url
+                        thumbnail_url = _best_thumbnail_url(info)
 
                     file_size = downloaded_file.stat().st_size
                     return {
@@ -271,7 +279,8 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
                         "file_path": downloaded_file,
                         "file_name": downloaded_file.name,
                         "file_size": file_size,
-                        "format": expected_ext.upper()
+                        "format": expected_ext.upper(),
+                        "thumbnail": thumbnail_url
                     }
         except Exception as e:
             last_error = e
@@ -699,3 +708,159 @@ async def download_youtube_media(
         f"{sent_media_status}"
     )
     return response
+
+
+async def process_media_for_api(
+    url: str,
+    format_type: str = "mp3",
+    quality: str = "best"
+) -> Dict[str, Any]:
+    """
+    Processa a extração de mídia (YouTube, Instagram, TikTok, etc.) especificamente para a API Mobile.
+    - Suporta URLs com '//', sem esquema ou completas
+    - Converte áudio para MP3 320kbps com tags ID3 e capa oficial embutida
+    - Registra no storage temporário de 48h da VPS
+    - Devolve o formato exato esperado pelo MediaItem do app Android
+    """
+    clean_url = (url or "").strip()
+    if clean_url.startswith("//"):
+        clean_url = "https:" + clean_url
+    elif not clean_url.startswith("http://") and not clean_url.startswith("https://"):
+        clean_url = "https://" + clean_url
+
+    fmt_lower = format_type.lower()
+    if fmt_lower not in ["mp3", "mp4"]:
+        fmt_lower = "mp3"
+
+    # 1. Trata Playlist se aplicável
+    if is_playlist_url(clean_url) and fmt_lower != "mp4":
+        out_dir = get_storage_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            result = await asyncio.to_thread(_run_playlist_dlp, clean_url, "320" if "320" in quality else "best", out_dir, 50)
+        except Exception as e:
+            err_str = str(e)
+            from agent.nodes import node_manager
+            is_bot_block = any(k in err_str.lower() for k in ["not a bot", "sign in", "bot", "403", "forbidden"])
+            if is_bot_block and node_manager.is_connected:
+                import json
+                pc_res = await node_manager.execute_on_pc("download_playlist_media_local", {
+                    "url": clean_url,
+                    "quality": "320" if "320" in quality else "best",
+                    "max_tracks": 50,
+                    "upload_to_vps": True
+                }, timeout=600)
+                res_data = json.loads(pc_res) if isinstance(pc_res, str) else pc_res
+                if res_data.get("success"):
+                    result = res_data["result"]
+                    result["file_path"] = Path(result["file_path"])
+                else:
+                    raise RuntimeError(res_data.get("error", "Erro ao extrair playlist no PC local."))
+            else:
+                raise
+
+        file_path = Path(result["file_path"])
+        file_name = result["file_name"]
+        file_size = result.get("file_size", 0)
+        title = result["title"]
+        uploader = result["uploader"]
+        track_count = result.get("track_count", 0)
+
+        storage_record = register_temp_file(
+            file_path=file_path,
+            filename=file_name,
+            metadata={
+                "title": title,
+                "uploader": uploader,
+                "track_count": track_count,
+                "type": "playlist_zip"
+            },
+            ttl_hours=48
+        )
+        token = storage_record["token"]
+        base_dl_url = get_download_url(token)
+        download_url = f"{base_dl_url}/{urllib.parse.quote(file_name)}"
+
+        return {
+            "id": token,
+            "title": title,
+            "author": uploader,
+            "duration": f"{track_count} faixas",
+            "thumbnail": result.get("thumbnail"),
+            "downloadUrl": download_url,
+            "format": "zip",
+            "fileSize": _format_size(file_size)
+        }
+
+    # 2. Mídia individual (Áudio MP3 ou Vídeo MP4)
+    out_dir = get_storage_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    result = None
+    try:
+        result = await asyncio.to_thread(_run_yt_dlp, clean_url, fmt_lower, quality, out_dir)
+    except Exception as e:
+        err_str = str(e)
+        from agent.nodes import node_manager
+        is_bot_block = any(k in err_str.lower() for k in ["not a bot", "sign in", "bot", "403", "forbidden"])
+        if is_bot_block and node_manager.is_connected:
+            import json
+            pc_res = await node_manager.execute_on_pc("download_youtube_media_local", {
+                "url": clean_url,
+                "format_type": fmt_lower,
+                "quality": quality,
+                "upload_to_vps": True
+            })
+            if isinstance(pc_res, str):
+                try:
+                    res_data = json.loads(pc_res)
+                except Exception:
+                    res_data = {}
+                if res_data.get("success"):
+                    result = res_data["result"]
+                    result["file_path"] = Path(result["file_path"])
+                else:
+                    raise RuntimeError(res_data.get("error", pc_res))
+            else:
+                raise RuntimeError(f"Resposta inesperada do PC: {pc_res}")
+        else:
+            raise
+
+    file_path = Path(result["file_path"])
+    file_name = result["file_name"]
+    file_size = result.get("file_size", 0)
+    title = result["title"]
+    uploader = result["uploader"]
+    duration_formatted = _format_duration(result.get("duration"))
+    file_size_formatted = _format_size(file_size)
+    thumbnail = result.get("thumbnail")
+    platform = _detect_platform(clean_url)
+
+    token = result.get("token")
+    if not token:
+        storage_record = register_temp_file(
+            file_path=file_path,
+            filename=file_name,
+            metadata={
+                "title": title,
+                "uploader": uploader,
+                "duration": duration_formatted,
+                "platform": platform
+            },
+            ttl_hours=48
+        )
+        token = storage_record["token"]
+
+    base_dl_url = get_download_url(token)
+    download_url = f"{base_dl_url}/{urllib.parse.quote(file_name)}"
+
+    return {
+        "id": token,
+        "title": title,
+        "author": uploader,
+        "duration": duration_formatted,
+        "thumbnail": thumbnail,
+        "downloadUrl": download_url,
+        "format": fmt_lower,
+        "fileSize": file_size_formatted
+    }
+

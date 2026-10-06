@@ -323,32 +323,130 @@ class AppLoginRequest(BaseModel):
 class AppLoginResponse(BaseModel):
     success: bool
     token: Optional[str] = None
+    role: Optional[str] = None
+    name: Optional[str] = None
     user_name: Optional[str] = None
+    message: Optional[str] = None
     error: Optional[str] = None
 
 @app.post("/api/auth/login", response_model=AppLoginResponse)
 async def api_auth_login(req: AppLoginRequest):
-    """Autentica o aplicativo mobile via telefone autorizado."""
+    """Autentica o aplicativo mobile via telefone autorizado (Admin ou Convidado)."""
     raw_phone = req.phone or ""
     cleaned_phone = "".join(c for c in raw_phone if c.isdigit())
-    allowed = [p.strip() for p in settings.ALLOWED_USERS.split(",") if p.strip()]
-    is_authorized = False
-    for num in allowed:
+    
+    # 1. Verifica se é Admin (ALLOWED_USERS)
+    is_admin = False
+    for num in settings.allowed_users_set:
         c_num = "".join(c for c in num if c.isdigit())
         if c_num and (cleaned_phone == c_num or cleaned_phone.endswith(c_num) or c_num.endswith(cleaned_phone)):
-            is_authorized = True
+            is_admin = True
             break
-            
-    if not is_authorized:
+
+    # 2. Verifica se é Guest / Convidado de Mídia (GUEST_USERS)
+    is_guest = False
+    if not is_admin:
+        for num in settings.guest_users_set:
+            c_num = "".join(c for c in num if c.isdigit())
+            if c_num and (cleaned_phone == c_num or cleaned_phone.endswith(c_num) or c_num.endswith(cleaned_phone)):
+                is_guest = True
+                break
+
+    if not is_admin and not is_guest:
         return AppLoginResponse(
             success=False,
+            message="Telefone não autorizado para acesso ao assistente.",
             error="Telefone não autorizado para acesso ao assistente."
         )
+
+    user_role = "admin" if is_admin else "guest"
+    user_name = "Paulo Henrique" if is_admin else "Convidado"
         
     return AppLoginResponse(
         success=True,
         token=settings.WORKER_SECRET,
-        user_name="Paulo Henrique"
+        role=user_role,
+        name=user_name,
+        user_name=user_name,
+        message=f"Bem-vindo, {user_name}!"
+    )
+
+class DownloadMediaApiRequest(BaseModel):
+    url: str
+    format: str = "mp3"
+    quality: str = "best"
+
+class MediaItemApiResponse(BaseModel):
+    id: str
+    title: str
+    author: Optional[str] = None
+    duration: Optional[str] = None
+    thumbnail: Optional[str] = None
+    downloadUrl: str
+    format: str
+    fileSize: Optional[str] = None
+
+@app.post("/api/media/download", response_model=MediaItemApiResponse)
+async def api_media_download(
+    req: DownloadMediaApiRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Endpoint de extração de alta fidelidade consumido pelo aplicativo Android.
+    - Suporta YouTube, Instagram Reels, TikTok, Twitter/X, etc.
+    - Enriquece automaticamente MP3s com capa oficial e ID3 tags completas
+    - Retorna objeto MediaItem compatível com o aplicativo Android
+    """
+    if settings.WORKER_SECRET and authorization:
+        token = authorization.replace("Bearer ", "").strip()
+        if token != settings.WORKER_SECRET:
+            raise HTTPException(status_code=403, detail="Sessão não autorizada. Faça login novamente.")
+
+    try:
+        from tools.youtube_downloader import process_media_for_api
+        result = await process_media_for_api(
+            url=req.url,
+            format_type=req.format,
+            quality=req.quality
+        )
+        return MediaItemApiResponse(**result)
+    except Exception as e:
+        logger.error(f"[Media API Error] Falha ao extrair '{req.url}': {e}", exc_info=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Falha ao extrair mídia: {str(e)}"
+        )
+
+class AppSystemStatus(BaseModel):
+    vpsCpuPercent: float = 12.0
+    vpsMemoryPercent: float = 38.0
+    pcConnected: bool = False
+    pcHostName: Optional[str] = None
+    activeTasks: int = 0
+
+@app.get("/api/admin/status", response_model=AppSystemStatus)
+async def api_admin_status(authorization: Optional[str] = Header(None)):
+    """Retorna status da infraestrutura híbrida (VPS + PC Local) para o App Mobile."""
+    pc_connected = node_manager.is_connected
+    pc_host = node_manager.pc_info.get("hostname", "Windows") if (pc_connected and node_manager.pc_info) else None
+    
+    cpu = 15.0
+    mem = 42.0
+    try:
+        import psutil
+        cpu = float(psutil.cpu_percent())
+        mem = float(psutil.virtual_memory().percent)
+    except Exception:
+        pass
+
+    active_tasks = len(getattr(task_manager, "tasks", {})) if hasattr(task_manager, "tasks") else 0
+
+    return AppSystemStatus(
+        vpsCpuPercent=cpu,
+        vpsMemoryPercent=mem,
+        pcConnected=pc_connected,
+        pcHostName=pc_host,
+        activeTasks=active_tasks
     )
 
 @app.post("/api/download_youtube")
