@@ -1,4 +1,4 @@
-$procs = Get-CimInstance Win32_Process | Where-Object { ($_.Name -like 'python*.exe') -and ($_.CommandLine -like '*worker.py*') }
+$procs = Get-CimInstance Win32_Process | Where-Object { ($_.Name -like 'python*.exe') -and ($_.CommandLine -like '*worker*') }
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host "   Encerrando processos do Worker Local..." -ForegroundColor White
 Write-Host "========================================================" -ForegroundColor Cyan
