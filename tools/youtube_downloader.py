@@ -172,12 +172,14 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
     platform = _detect_platform(url)
     is_youtube = platform == "YouTube"
 
+    node_exe = shutil.which("node")
+
     if is_youtube:
-        # Estratégias de bypass específicas para YouTube
+        # Estratégias de bypass específicas para YouTube priorizando clientes funcionais
         strategies = [
+            {"extractor_args": {"youtube": {"player_client": ["visionos", "android", "web"]}}},
+            {"extractor_args": {"youtube": {"player_client": ["android"]}}},
             {"extractor_args": {"youtube": {"player_client": ["visionos"]}}},
-            {"extractor_args": {"youtube": {"player_client": ["web_creator"]}}},
-            {"extractor_args": {"youtube": {"player_client": ["tv_downgraded"]}}},
             {"extractor_args": {"youtube": {"player_client": ["web"]}}},
         ]
         cookies_file = _get_youtube_cookies()
@@ -204,13 +206,15 @@ def _run_yt_dlp(url: str, format_type: str, quality: str, out_dir: Path) -> Dict
         }
         if ffmpeg_loc:
             ydl_opts["ffmpeg_location"] = ffmpeg_loc
+        if node_exe:
+            ydl_opts["js_runtimes"] = {"node": {}}
         ydl_opts.update(strat)
 
         if format_type.lower() == "mp3":
             # Extração de áudio convertida para MP3 (aceita qualquer codec e converte para MP3)
             audio_quality = "320" if "320" in quality else ("128" if "128" in quality else "192")
             ydl_opts.update({
-                "format": "ba/b",
+                "format": "bestaudio/ba/b",
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
@@ -345,10 +349,12 @@ def _run_playlist_dlp(url: str, quality: str, out_dir: Path, max_tracks: int = 5
     out_template = str(pl_dir / "%(playlist_index|00)02d - %(title).100s.%(ext)s")
     audio_quality = "320" if "320" in quality else ("128" if "128" in quality else "192")
 
+    node_exe = shutil.which("node")
+
     strategies = [
+        {"extractor_args": {"youtube": {"player_client": ["visionos", "android", "web"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["android"]}}},
         {"extractor_args": {"youtube": {"player_client": ["visionos"]}}},
-        {"extractor_args": {"youtube": {"player_client": ["web_creator"]}}},
-        {"extractor_args": {"youtube": {"player_client": ["tv_downgraded"]}}},
         {"extractor_args": {"youtube": {"player_client": ["web"]}}},
     ]
     if cookies_file:
@@ -364,7 +370,7 @@ def _run_playlist_dlp(url: str, quality: str, out_dir: Path, max_tracks: int = 5
             "no_warnings": True,
             "noplaylist": False,
             "playlistend": max_tracks,
-            "format": "ba/b",
+            "format": "bestaudio/ba/b",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
@@ -374,6 +380,8 @@ def _run_playlist_dlp(url: str, quality: str, out_dir: Path, max_tracks: int = 5
         }
         if ffmpeg_loc:
             ydl_opts["ffmpeg_location"] = ffmpeg_loc
+        if node_exe:
+            ydl_opts["js_runtimes"] = {"node": {}}
         ydl_opts.update(strat)
 
         try:
@@ -799,6 +807,7 @@ async def process_media_for_api(
 
     # 2. Mídia individual (Áudio MP3 ou Vídeo MP4)
     result = None
+    pc_error_msg = None
 
     # Prioriza o PC local (Windows) conectado via worker para usar o IP residencial
     # Isso se livra dos bloqueios de cookies e do antibot de datacenter do YouTube
@@ -825,8 +834,10 @@ async def process_media_for_api(
                 result["file_path"] = Path(result["file_path"])
                 logger.info(f"[Media API] Extração concluída pelo PC residencial com tags ID3 e capa: {result.get('title')}")
             else:
-                logger.warning(f"[Media API] PC retornou erro: {res_data.get('error')}. Tentando fallback na VPS...")
+                pc_error_msg = res_data.get("error") or "Erro retornado pelo PC"
+                logger.warning(f"[Media API] PC retornou erro: {pc_error_msg}. Tentando fallback na VPS...")
         except Exception as pc_err:
+            pc_error_msg = str(pc_err)
             logger.warning(f"[Media API] Falha na comunicação com PC worker ({pc_err}). Tentando na VPS...")
             result = None
 
@@ -835,7 +846,12 @@ async def process_media_for_api(
         logger.info(f"[Media API] Extraindo mídia diretamente na VPS...")
         out_dir = get_storage_dir()
         out_dir.mkdir(parents=True, exist_ok=True)
-        result = await asyncio.to_thread(_run_yt_dlp, clean_url, fmt_lower, quality, out_dir)
+        try:
+            result = await asyncio.to_thread(_run_yt_dlp, clean_url, fmt_lower, quality, out_dir)
+        except Exception as vps_err:
+            if node_manager.is_connected and pc_error_msg:
+                raise RuntimeError(f"Erro na extração residencial do PC: {pc_error_msg}")
+            raise
 
     file_path = Path(result["file_path"])
     file_name = result["file_name"]

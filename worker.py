@@ -375,8 +375,17 @@ git push origin {b}
             timeout=120
         )
     elif action == "download_youtube_media_local":
-        from tools.youtube_downloader import _run_yt_dlp
-        url = args.get("url")
+        import importlib
+        import tools.youtube_downloader
+        importlib.reload(tools.youtube_downloader)
+        _run_yt_dlp = tools.youtube_downloader._run_yt_dlp
+
+        raw_url = args.get("url", "")
+        clean_url = str(raw_url).strip()
+        if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
+            clean_url = "https://" + clean_url.lstrip("/")
+        url = clean_url
+
         fmt = args.get("format_type", "mp3")
         qual = args.get("quality", "best")
 
@@ -418,8 +427,17 @@ git push origin {b}
         except Exception as e:
             res = json.dumps({"success": False, "error": str(e)})
     elif action == "download_playlist_media_local":
-        from tools.youtube_downloader import _run_playlist_dlp
-        url = args.get("url")
+        import importlib
+        import tools.youtube_downloader
+        importlib.reload(tools.youtube_downloader)
+        _run_playlist_dlp = tools.youtube_downloader._run_playlist_dlp
+
+        raw_url = args.get("url", "")
+        clean_url = str(raw_url).strip()
+        if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
+            clean_url = "https://" + clean_url.lstrip("/")
+        url = clean_url
+
         qual = args.get("quality", "320")
         max_t = args.get("max_tracks", 50)
 
