@@ -723,26 +723,22 @@ async def process_media_for_api(
     - Devolve o formato exato esperado pelo MediaItem do app Android
     """
     clean_url = (url or "").strip()
-    if clean_url.startswith("//"):
-        clean_url = "https:" + clean_url
-    elif not clean_url.startswith("http://") and not clean_url.startswith("https://"):
-        clean_url = "https://" + clean_url
+    if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
+        clean_url = "https://" + clean_url.lstrip("/")
 
     fmt_lower = format_type.lower()
     if fmt_lower not in ["mp3", "mp4"]:
         fmt_lower = "mp3"
 
+    from agent.nodes import node_manager
+
     # 1. Trata Playlist se aplicável
     if is_playlist_url(clean_url) and fmt_lower != "mp4":
-        out_dir = get_storage_dir()
-        out_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            result = await asyncio.to_thread(_run_playlist_dlp, clean_url, "320" if "320" in quality else "best", out_dir, 50)
-        except Exception as e:
-            err_str = str(e)
-            from agent.nodes import node_manager
-            is_bot_block = any(k in err_str.lower() for k in ["not a bot", "sign in", "bot", "403", "forbidden"])
-            if is_bot_block and node_manager.is_connected:
+        result = None
+        # Prioriza o PC local (IP residencial limpo sem antibot)
+        if node_manager.is_connected:
+            try:
+                logger.info(f"[Media API] PC local conectado. Extraindo playlist via IP residencial...")
                 import json
                 pc_res = await node_manager.execute_on_pc("download_playlist_media_local", {
                     "url": clean_url,
@@ -755,9 +751,15 @@ async def process_media_for_api(
                     result = res_data["result"]
                     result["file_path"] = Path(result["file_path"])
                 else:
-                    raise RuntimeError(res_data.get("error", "Erro ao extrair playlist no PC local."))
-            else:
-                raise
+                    logger.warning(f"[Media API] PC falhou na playlist: {res_data.get('error')}")
+            except Exception as pc_err:
+                logger.warning(f"[Media API] Erro ao extrair playlist no PC: {pc_err}")
+
+        # Fallback na VPS
+        if not result:
+            out_dir = get_storage_dir()
+            out_dir.mkdir(parents=True, exist_ok=True)
+            result = await asyncio.to_thread(_run_playlist_dlp, clean_url, "320" if "320" in quality else "best", out_dir, 50)
 
         file_path = Path(result["file_path"])
         file_name = result["file_name"]
@@ -766,18 +768,21 @@ async def process_media_for_api(
         uploader = result["uploader"]
         track_count = result.get("track_count", 0)
 
-        storage_record = register_temp_file(
-            file_path=file_path,
-            filename=file_name,
-            metadata={
-                "title": title,
-                "uploader": uploader,
-                "track_count": track_count,
-                "type": "playlist_zip"
-            },
-            ttl_hours=48
-        )
-        token = storage_record["token"]
+        token = result.get("token")
+        if not token:
+            storage_record = register_temp_file(
+                file_path=file_path,
+                filename=file_name,
+                metadata={
+                    "title": title,
+                    "uploader": uploader,
+                    "track_count": track_count,
+                    "type": "playlist_zip"
+                },
+                ttl_hours=48
+            )
+            token = storage_record["token"]
+
         base_dl_url = get_download_url(token)
         download_url = f"{base_dl_url}/{urllib.parse.quote(file_name)}"
 
@@ -793,37 +798,44 @@ async def process_media_for_api(
         }
 
     # 2. Mídia individual (Áudio MP3 ou Vídeo MP4)
-    out_dir = get_storage_dir()
-    out_dir.mkdir(parents=True, exist_ok=True)
     result = None
-    try:
-        result = await asyncio.to_thread(_run_yt_dlp, clean_url, fmt_lower, quality, out_dir)
-    except Exception as e:
-        err_str = str(e)
-        from agent.nodes import node_manager
-        is_bot_block = any(k in err_str.lower() for k in ["not a bot", "sign in", "bot", "403", "forbidden"])
-        if is_bot_block and node_manager.is_connected:
+
+    # Prioriza o PC local (Windows) conectado via worker para usar o IP residencial
+    # Isso se livra dos bloqueios de cookies e do antibot de datacenter do YouTube
+    if node_manager.is_connected:
+        try:
+            logger.info(f"[Media API] PC local online ({node_manager.pc_info.get('hostname')}). Extraindo {fmt_lower.upper()} via IP residencial...")
             import json
             pc_res = await node_manager.execute_on_pc("download_youtube_media_local", {
                 "url": clean_url,
                 "format_type": fmt_lower,
                 "quality": quality,
                 "upload_to_vps": True
-            })
+            }, timeout=300)
             if isinstance(pc_res, str):
                 try:
                     res_data = json.loads(pc_res)
                 except Exception:
                     res_data = {}
-                if res_data.get("success"):
-                    result = res_data["result"]
-                    result["file_path"] = Path(result["file_path"])
-                else:
-                    raise RuntimeError(res_data.get("error", pc_res))
             else:
-                raise RuntimeError(f"Resposta inesperada do PC: {pc_res}")
-        else:
-            raise
+                res_data = pc_res or {}
+
+            if res_data.get("success"):
+                result = res_data["result"]
+                result["file_path"] = Path(result["file_path"])
+                logger.info(f"[Media API] Extração concluída pelo PC residencial com tags ID3 e capa: {result.get('title')}")
+            else:
+                logger.warning(f"[Media API] PC retornou erro: {res_data.get('error')}. Tentando fallback na VPS...")
+        except Exception as pc_err:
+            logger.warning(f"[Media API] Falha na comunicação com PC worker ({pc_err}). Tentando na VPS...")
+            result = None
+
+    # Fallback na VPS se o PC estiver offline ou falhar
+    if not result:
+        logger.info(f"[Media API] Extraindo mídia diretamente na VPS...")
+        out_dir = get_storage_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        result = await asyncio.to_thread(_run_yt_dlp, clean_url, fmt_lower, quality, out_dir)
 
     file_path = Path(result["file_path"])
     file_name = result["file_name"]
