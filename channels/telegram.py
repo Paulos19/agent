@@ -4,23 +4,79 @@ import httpx
 from typing import Optional, Tuple, Dict, Any
 from config import settings
 
-def extract_telegram_message(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+async def extract_telegram_message(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]]]:
     """
     Extrai informações cruciais do webhook do Telegram:
-    Retorna: (chat_id_str, message_text) ou (None, None)
+    Retorna: (chat_id_str, message_text, media_info) ou (None, None, None)
     """
     message = payload.get("message") or payload.get("edited_message")
     if not message:
-        return None, None
+        return None, None, None
 
     chat = message.get("chat", {})
     chat_id = str(chat.get("id", ""))
     text = (message.get("text") or "").strip()
+    media_info: Optional[Dict[str, Any]] = None
+    token = settings.TELEGRAM_BOT_TOKEN
+
+    # 1. Foto enviada no Telegram
+    if "photo" in message and message["photo"] and token:
+        photos = message["photo"]
+        best_photo = photos[-1]
+        file_id = best_photo.get("file_id")
+        caption = (message.get("caption") or "").strip()
+        text = caption or "Analise esta imagem em detalhes e me diga o que há nela ou resolva o que for necessário."
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                res = await client.get(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}")
+                if res.status_code == 200:
+                    file_path = res.json().get("result", {}).get("file_path")
+                    if file_path:
+                        img_res = await client.get(f"https://api.telegram.org/file/bot{token}/{file_path}")
+                        if img_res.status_code == 200:
+                            import base64
+                            b64_data = base64.b64encode(img_res.content).decode("utf-8")
+                            media_info = {
+                                "type": "image",
+                                "mimetype": "image/jpeg",
+                                "base64": b64_data,
+                                "caption": caption
+                            }
+        except Exception:
+            pass
+
+    # 2. Áudio / Mensagem de voz enviada no Telegram
+    elif ("voice" in message or "audio" in message) and token:
+        audio_obj = message.get("voice") or message.get("audio")
+        file_id = audio_obj.get("file_id")
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                res = await client.get(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}")
+                if res.status_code == 200:
+                    file_path = res.json().get("result", {}).get("file_path")
+                    if file_path:
+                        audio_res = await client.get(f"https://api.telegram.org/file/bot{token}/{file_path}")
+                        if audio_res.status_code == 200:
+                            import base64
+                            from tools.voice import transcribe_audio_bytes
+                            raw_bytes = audio_res.content
+                            b64_data = base64.b64encode(raw_bytes).decode("utf-8")
+                            transcription = await transcribe_audio_bytes(raw_bytes, "audio/ogg")
+                            text = transcription.strip() or "[Áudio enviado pelo usuário]"
+                            media_info = {
+                                "type": "audio",
+                                "mimetype": "audio/ogg",
+                                "base64": b64_data,
+                                "transcription": text,
+                                "input_is_audio": True
+                            }
+        except Exception:
+            pass
 
     if not chat_id or not text:
-        return None, None
+        return None, None, None
 
-    return chat_id, text
+    return chat_id, text, media_info
 
 async def send_telegram_message(chat_id: str, text: str) -> bool:
     """

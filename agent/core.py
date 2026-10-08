@@ -11,6 +11,7 @@ from tools import (
     list_directory,
     read_file,
     write_file,
+    replace_in_file,
     create_directory,
     schedule_timer,
     schedule_cron,
@@ -140,6 +141,36 @@ AGENT_TOOLS = [
                     }
                 },
                 "required": ["path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replace_in_file",
+            "description": "Substitui um trecho exato de código ou texto dentro de um arquivo existente. Use esta ferramenta para fazer correções rápidas, pontuais ou cirúrgicas sem precisar reescrever o arquivo inteiro.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Caminho do arquivo a ser modificado."
+                    },
+                    "target_text": {
+                        "type": "string",
+                        "description": "O trecho de código/texto exato a ser substituído."
+                    },
+                    "replacement_text": {
+                        "type": "string",
+                        "description": "O novo trecho de código/texto que entrará no lugar."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["pc", "vps"],
+                        "description": "Onde editar o arquivo: 'pc' para o computador pessoal ou 'vps' para a nuvem."
+                    }
+                },
+                "required": ["path", "target_text", "replacement_text"]
             }
         }
     },
@@ -734,13 +765,23 @@ Topologia do Sistema:
 - Canal de Comunicação: WhatsApp / Telegram
 
 DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
-1. Autonomia Total & Resolução Ativa de Erros (MUITO IMPORTANTE):
-   - Você tem a MESMA LIBERDADE e capacidade de resolver problemas que um agente IDE sênior possui.
-   - NUNCA desista de uma tarefa nem transfira trabalho braçal para o usuário! NUNCA diga para o usuário rodar comandos git manuais, editar código por conta própria ou abrir o painel do Easypanel para resolver erros.
+1. AUTONOMIA TOTAL, AÇÃO IMEDIATA & PROIBIÇÃO DE CONFIRMAÇÕES (MUITO IMPORTANTE):
+   - Você é um AGENTE EXECUTOR AUTÔNOMO SÊNIOR (estilo Antigravity / Claude Code). Você tem PERMISSÃO TOTAL E IRRESTRITA concedida pelo usuário.
+   - NUNCA monte um plano apenas para parar e perguntar:
+     * "Posso alterar?"
+     * "Deseja que eu faça isso?"
+     * "Devo prosseguir com as alterações?"
+     * "Autoriza o plano de ação?"
+     * "Posso criar o arquivo?"
+   - Esse comportamento de chatbot passivo é TERMINANTEMENTE PROIBIDO.
+   - O pedido inicial do usuário ("crie...", "edite...", "corrija...", "arrume...", "faça...", "implemente...", "adicione...") JÁ É A SUA AUTORIZAÇÃO COMPLETA.
+   - Ao receber o pedido, você DEVE EXECUTAR AS FERRAMENTAS IMEDIATAMENTE (list_directory, read_file, write_file, replace_in_file, execute_terminal_command) NO MESMO TURNO até concluir as modificações!
+   - NUNCA diga "Tarefa concluída" ou "Tudo pronto" se você não tiver executado as ferramentas fisicamente. Se você não alterou o arquivo ou não rodou o comando, a tarefa NÃO foi concluída.
+   - Se o usuário disser apenas "sim", "pode", "autorizo", "vai", "continua", "ok", NÃO repita o plano nem agradeça: CHAME AS FERRAMENTAS E EXECUTE AS AÇÕES PENDENTES AGORA MESMO!
    - Se um build, scaffold ou comando falhar (ex: erro de compilação TypeScript no 'npm run build', erro de linting, importação ausente ou quebrada, erro 502 Bad Gateway no container, ou conflito no git):
      a) Leia atentamente a mensagem de erro e a stack trace retornada.
      b) Use 'read_file' para abrir e inspecionar o arquivo defeituoso no caminho exato.
-     c) Corrija o código usando 'write_file'.
+     c) Corrija o código usando 'replace_in_file' ou 'write_file'.
      d) Valide a correção no PC executando 'execute_terminal_command(command="npm run build", working_directory="D:\\\\testes\\\\<projeto>", target="pc")'.
      e) Assim que compilar perfeitamente, envie a correção com 'git_commit_and_push(repo_path="D:\\\\testes\\\\<projeto>", message="fix: ...")'.
      f) Acione 'trigger_easypanel_deploy' para rebuildar o container no Easypanel.
@@ -867,6 +908,11 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
           3. A ENTREGA É DUPLA: a ferramenta envia a mídia diretamente no WhatsApp para tocar/assistir na hora E fornece o link direto para download na pasta permanente Download do smartphone.
           4. Ao concluir, apresente o título, autor, duração, tamanho, a validade de 48 horas e o link direto de download destacado com instruções amigáveis.
 
+       * VISÃO COMPUTACIONAL E PROCESSAMENTO DE IMAGENS & ÁUDIOS:
+         - Quando o usuário enviar fotos, prints ou imagens (telas de erro, fotos de documentos, tabelas, notas, interfaces ou diagramas de arquitetura), analise os detalhes visuais com máxima precisão.
+         - Se a imagem contiver um erro de código ou terminal no Windows ou VPS, leia o erro, localize o arquivo correspondente no projeto com suas ferramentas e realize a correção sem pedir que o usuário reescreva o erro em texto!
+         - Se a mensagem do usuário for uma transcrição de áudio, responda de forma fluida e objetiva. Se o usuário pedir para você responder por áudio ou falar, mantenha a resposta clara e bem pontuada para que a síntese de voz soe agradável.
+
       - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
      * Use sempre Tailwind CSS com utilities de backdrop-blur e gradientes sofisticados.
@@ -874,7 +920,19 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
 
 def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
     """Retorna (step_title, informal_notification)"""
-    if fn_name == "git_commit_and_push":
+    if fn_name == "replace_in_file":
+        path = args.get("path", "arquivo")
+        return (
+            f"Editando arquivo {path}",
+            f"✍️ Fazendo alteração cirúrgica no arquivo `{path}`..."
+        )
+    elif fn_name == "write_file":
+        path = args.get("path", "arquivo")
+        return (
+            f"Gravando arquivo {path}",
+            f"📝 Gravando alterações no arquivo `{path}`..."
+        )
+    elif fn_name == "git_commit_and_push":
         msg = args.get("message", "atualização")
         branch = args.get("branch", "main")
         return (
@@ -981,26 +1039,75 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         )
     return (f"Executando {fn_name}", "")
 
+def _is_short_affirmation(text: str) -> bool:
+    """Detecta se a mensagem do usuário é uma confirmação ou autorização curta."""
+    clean = text.strip().lower().strip(".!?,;: ")
+    affirmations = {
+        "sim", "s", "pode", "pode sim", "pode alterar", "pode fazer", "autorizado",
+        "autorizo", "confirmo", "confirmado", "ok", "bora", "vai", "manda bala",
+        "faz aí", "faz ai", "prossiga", "continua", "executa", "dale", "pode ir",
+        "pode aplicar", "aplica", "atualiza", "altera", "manda ver", "com certeza",
+        "pode prosseguir", "show", "beleza", "fechado", "claro", "manda", "pode ser"
+    }
+    if clean in affirmations:
+        return True
+    words = clean.split()
+    if len(words) <= 4 and any(w in clean for w in ["pode", "autorizo", "confirmo", "aplica", "faz", "prossiga", "continua", "altera"]):
+        return True
+    return False
+
 async def run_agent_loop(
     user_prompt: str,
     user_id: str,
     channel: str = "whatsapp",
     max_turns: int = 25,
-    on_step: Optional[Any] = None
+    on_step: Optional[Any] = None,
+    media_info: Optional[Dict[str, Any]] = None
 ) -> str:
     """
     Executa o loop ReAct do agente até que o Gemini produza a resposta final.
+    Suporta entrada multimodal com imagens em alta resolução.
     """
     system_prompt = get_system_prompt()
     history = memory.get_history(user_id)
     
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
-    messages.append({"role": "user", "content": user_prompt})
 
-    memory.add_message(user_id, {"role": "user", "content": user_prompt})
+    # Enriquece confirmações curtas para impedir que o modelo entre em loop de confirmação
+    effective_user_prompt = user_prompt
+    if _is_short_affirmation(user_prompt):
+        effective_user_prompt = (
+            f"{user_prompt}\n\n"
+            "[SISTEMA - EXECUÇÃO IMEDIATA AUTORIZADA]: O usuário deu autorização total e confirmou a execução. "
+            "NÃO repita o plano de ação, NÃO peça confirmação novamente e NÃO diga apenas 'tarefa concluída' antes de agir. "
+            "CHAME IMEDIATAMENTE as ferramentas necessárias ('replace_in_file', 'write_file', 'execute_terminal_command', etc.) "
+            "para aplicar as alterações reais no projeto agora mesmo!"
+        )
+
+    # Suporte multimodal nativo (imagens e capturas visuais)
+    if media_info and media_info.get("type") == "image" and media_info.get("base64"):
+        b64_img = media_info["base64"]
+        mime = media_info.get("mimetype", "image/jpeg")
+        b64_url = b64_img if b64_img.startswith("data:") else f"data:{mime};base64,{b64_img}"
+        user_content = [
+            {"type": "text", "text": effective_user_prompt},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": b64_url
+                }
+            }
+        ]
+        messages.append({"role": "user", "content": user_content})
+        memory.add_message(user_id, {"role": "user", "content": f"[Imagem enviada pelo usuário]: {user_prompt}"})
+    else:
+        messages.append({"role": "user", "content": effective_user_prompt})
+        memory.add_message(user_id, {"role": "user", "content": user_prompt})
 
     turns = 0
+    modifying_tools_called = 0
+    guard_rail_turns = 0
     final_reply = ""
 
     while turns < max_turns:
@@ -1055,6 +1162,37 @@ async def run_agent_loop(
         messages.append(msg)
 
         if not msg.tool_calls:
+            content_lower = (msg.content or "").lower()
+            
+            hesitation_triggers = [
+                "posso alterar", "posso prosseguir", "posso fazer", "posso aplicar",
+                "posso atualizar", "posso criar", "deseja que eu", "quer que eu",
+                "você autoriza", "me autoriza", "autoriza a alteração", "autoriza o plano",
+                "posso começar", "devo prosseguir", "posso continuar", "posso mexer",
+                "confirma a alteração", "confirma para que eu", "se autorizar", "se você autorizar",
+                "autorização para prosseguir", "autorização para aplicar", "autoriza?"
+            ]
+            is_asking_permission = any(t in content_lower for t in hesitation_triggers)
+            
+            # Checa se o usuário pediu uma ação modificadora ou confirmou ação anterior
+            user_intent_action = any(k in user_prompt.lower() for k in [
+                "cria", "edita", "altera", "modifica", "adiciona", "remove", "deleta",
+                "conserta", "arruma", "implementa", "muda", "atualiza", "corrige",
+                "troca", "faz", "escreve", "coloca", "aplica", "instala", "build"
+            ]) or _is_short_affirmation(user_prompt)
+
+            # GUARD RAIL ANTI-HESITAÇÃO: Se o modelo pediu permissão OU se o usuário pediu ação mas nenhuma ferramenta modificadora foi chamada ainda
+            if guard_rail_turns < 2 and (is_asking_permission or (user_intent_action and modifying_tools_called == 0)):
+                guard_rail_turns += 1
+                prompt_enforcement = (
+                    "[SISTEMA - AÇÃO OBRIGATÓRIA]: Você é um agente autônomo sênior com permissão total e irrestrita concedida pelo usuário. "
+                    "NUNCA pergunte se pode alterar, NUNCA peça confirmação e NUNCA declare tarefa concluída sem agir fisicamente. "
+                    "CHAME IMEDIATAMENTE as ferramentas necessárias ('replace_in_file', 'write_file', 'execute_terminal_command', etc.) "
+                    "para aplicar as alterações reais no código/sistema agora mesmo!"
+                )
+                messages.append({"role": "user", "content": prompt_enforcement})
+                continue
+
             final_reply = msg.content or "Tarefa concluída."
             memory.add_message(user_id, {"role": "assistant", "content": final_reply})
             break
@@ -1090,6 +1228,7 @@ async def run_agent_loop(
                     "list_directory",
                     "read_file",
                     "write_file",
+                    "replace_in_file",
                     "create_directory",
                     "git_status",
                     "git_diff",
@@ -1127,6 +1266,12 @@ async def run_agent_loop(
                     tool_output = read_file(args.get("path", ""), args.get("max_lines", 400))
                 elif fn_name == "write_file":
                     tool_output = write_file(args.get("path", ""), args.get("content", ""))
+                elif fn_name == "replace_in_file":
+                    tool_output = replace_in_file(
+                        path=args.get("path", ""),
+                        target_text=args.get("target_text", ""),
+                        replacement_text=args.get("replacement_text", "")
+                    )
                 elif fn_name == "create_directory":
                     tool_output = create_directory(args.get("path", ""))
                 elif fn_name == "git_status":
@@ -1296,6 +1441,17 @@ async def run_agent_loop(
                     tool_output = f"[ERRO]: Ferramenta '{fn_name}' desconhecida."
             except Exception as tool_err:
                 tool_output = f"[ERRO AO EXECUTAR {fn_name}]: {str(tool_err)}"
+
+            # Contabiliza ferramentas modificadoras para garantir execução real
+            MODIFYING_TOOL_NAMES = {
+                "write_file", "replace_in_file", "create_directory",
+                "git_commit_and_push", "create_github_repository", "push_project_to_github",
+                "create_and_deploy_easypanel_app", "trigger_easypanel_deploy",
+                "setup_docker_deployment", "manage_pc_power", "download_youtube_media",
+                "download_playlist_media"
+            }
+            if fn_name in MODIFYING_TOOL_NAMES or fn_name == "execute_terminal_command":
+                modifying_tools_called += 1
 
             tool_output_str = str(tool_output)
             if len(tool_output_str) > 3500:

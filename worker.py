@@ -234,6 +234,27 @@ def local_create_directory(path: str) -> str:
     except Exception as e:
         return f"[ERRO AO CRIAR PASTA]: {str(e)}"
 
+def local_replace_in_file(path: str, target_text: str, replacement_text: str) -> str:
+    """Substitui um trecho específico de texto dentro de um arquivo no PC."""
+    target = Path(os.path.expanduser(path)).resolve()
+    if not target.exists():
+        return f"[ERRO]: O arquivo '{path}' não existe no PC."
+    if not target.is_file():
+        return f"[ERRO]: '{path}' é um diretório, não um arquivo."
+
+    try:
+        content = target.read_text(encoding="utf-8", errors="replace")
+        if target_text not in content:
+            return f"[ERRO]: O trecho exato a substituir não foi encontrado em '{target.name}'. Certifique-se de passar o trecho exato."
+
+        occurrences = content.count(target_text)
+        new_content = content.replace(target_text, replacement_text, 1)
+        target.write_text(new_content, encoding="utf-8")
+        extra_note = f" (Aviso: havia {occurrences} ocorrências; a primeira foi substituída)." if occurrences > 1 else ""
+        return f"[SUCESSO]: Arquivo '{target.name}' editado com sucesso no PC{extra_note}."
+    except Exception as e:
+        return f"[ERRO AO SUBSTITUIR NO PC]: {str(e)}"
+
 def take_pc_screenshot(out_path: str = None) -> Path:
     """Captura o screenshot da tela principal do Windows com suporte a troca de desktop."""
     import ctypes
@@ -325,6 +346,8 @@ async def handle_action(action: str, args: dict, ws=None, call_id: str = None) -
         res = local_read_file(args.get("path", ""), args.get("max_lines", 400))
     elif action == "write_file":
         res = local_write_file(args.get("path", ""), args.get("content", ""))
+    elif action == "replace_in_file":
+        res = local_replace_in_file(args.get("path", ""), args.get("target_text", ""), args.get("replacement_text", ""))
     elif action == "create_directory":
         res = local_create_directory(args.get("path", ""))
     elif action == "git_status":

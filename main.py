@@ -23,10 +23,12 @@ from channels import (
     extract_evolution_message,
     send_evolution_message,
     send_evolution_media,
+    send_evolution_audio_ptt,
     extract_telegram_message,
     send_telegram_message,
     send_telegram_media,
-    send_channel_media
+    send_channel_media,
+    send_channel_audio
 )
 
 # Configuração de logs
@@ -85,35 +87,6 @@ downloads_dir = settings.workspace_path / "downloads"
 downloads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/downloads", StaticFiles(directory=str(downloads_dir)), name="downloads")
 
-@app.get("/download/{filename}")
-async def download_file_direct(filename: str):
-    """
-    Endpoint de download direto com Content-Disposition: attachment.
-    Força o navegador do celular (Chrome/Safari) a fazer o download direto
-    para a pasta 'Download' do aparelho (onde os apps de música e galeria enxergam),
-    em vez de abrir apenas para reprodução na aba.
-    """
-    decoded_name = urllib.parse.unquote(filename)
-    downloads_path = (settings.workspace_path / "downloads").resolve()
-    file_path = (downloads_path / decoded_name).resolve()
-
-    # Prevenção de Path Traversal
-    if not str(file_path).startswith(str(downloads_path)):
-        raise HTTPException(status_code=403, detail="Acesso não autorizado.")
-
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Arquivo não encontrado ou já expirado.")
-
-    ext = file_path.suffix.lower()
-    if ext == ".mp3":
-        mime = "audio/mpeg"
-    elif ext == ".mp4":
-        mime = "video/mp4"
-    elif ext == ".m4a":
-        mime = "audio/mp4"
-    else:
-        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
-
 def _make_content_disposition(filename: str, fallback_prefix: str = "download") -> str:
     """Gera cabeçalho Content-Disposition 100% compatível com RFC 5987 / RFC 6266 (Latin-1 safe)."""
     import unicodedata
@@ -130,11 +103,25 @@ def _make_content_disposition(filename: str, fallback_prefix: str = "download") 
 @app.get("/download/{filename}")
 async def download_file(filename: str):
     """
-    Endpoint legado para download direto de arquivos do projeto no workspace.
+    Endpoint para download direto com Content-Disposition: attachment.
+    Força o navegador do celular (Chrome/Safari) a fazer o download direto
+    para a pasta 'Download' do aparelho (onde os apps de música e galeria enxergam).
     """
-    file_path = (settings.workspace_path / filename).resolve()
+    decoded_name = urllib.parse.unquote(filename)
+    downloads_path = (settings.workspace_path / "downloads").resolve()
+    file_path = (downloads_path / decoded_name).resolve()
+
     if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Arquivo não encontrado.")
+        # Fallback para o diretório raiz do workspace
+        file_path = (settings.workspace_path / decoded_name).resolve()
+
+    # Prevenção de Path Traversal
+    workspace_root = settings.workspace_path.resolve()
+    if not str(file_path).startswith(str(workspace_root)):
+        raise HTTPException(status_code=403, detail="Acesso não autorizado.")
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado ou já expirado.")
 
     ext = file_path.suffix.lower()
     if ext == ".mp3":
@@ -439,7 +426,7 @@ async def api_admin_status(authorization: Optional[str] = Header(None)):
     except Exception:
         pass
 
-    active_tasks = len(getattr(task_manager, "tasks", {})) if hasattr(task_manager, "tasks") else 0
+    active_tasks = len(getattr(task_manager, "_active_tasks", {})) if hasattr(task_manager, "_active_tasks") else 0
 
     return AppSystemStatus(
         vpsCpuPercent=cpu,
@@ -470,38 +457,9 @@ async def api_download_youtube(
     )
     return {"status": "success", "result": result_text}
 
-@app.post("/api/upload_temp")
-async def api_upload_temp(
-    file: UploadFile = File(...),
-    token: str = Query(...)
-):
-    """Permite ao worker local enviar arquivos (screenshots, áudios, .zip) para a VPS."""
-    if token != settings.WORKER_SECRET:
-        raise HTTPException(status_code=403, detail="Token inválido")
-
-    from tools.temp_storage import get_storage_dir, register_temp_file, get_download_url
-    storage_dir = get_storage_dir()
-    save_path = storage_dir / file.filename
-
-    content = await file.read()
-    save_path.write_bytes(content)
-
-    reg = register_temp_file(
-        file_path=save_path,
-        filename=file.filename,
-        ttl_hours=48
-    )
-
-    return {
-        "status": "success",
-        "file_path": str(reg["actual_path"]),
-        "download_url": get_download_url(reg["token"]),
-        "token": reg["token"]
-    }
-
-async def process_user_request(user_id: str, channel: str, prompt: str):
-    """Executa a solicitação do usuário com suporte a streaming de progresso e concorrência."""
-    logger.info(f"[Iniciando Processamento] Usuário: {user_id} | Canal: {channel} | Prompt: {prompt[:60]}...")
+async def process_user_request(user_id: str, channel: str, prompt: str, media_info: Optional[Dict[str, Any]] = None):
+    """Executa a solicitação do usuário com suporte a streaming de progresso, imagens e respostas em áudio."""
+    logger.info(f"[Iniciando Processamento] Usuário: {user_id} | Canal: {channel} | Prompt: {prompt[:60]}... | Media: {bool(media_info)}")
     
     clean_num = re.sub(r"\D", "", user_id.split("@")[0])
     is_guest = (clean_num in settings.guest_users_set) and (clean_num not in settings.allowed_users_set)
@@ -715,15 +673,43 @@ async def process_user_request(user_id: str, channel: str, prompt: str):
         if informal_message:
             await send_channel_message(user_id, channel, informal_message)
 
+    if media_info and media_info.get("type") == "image":
+        await send_channel_message(user_id, channel, "📸 _Recebi sua imagem! Analisando os detalhes visuais..._")
+
+    # Determina se deve responder em áudio
+    wants_audio_response = False
+    audio_mode = getattr(settings, "AUDIO_RESPONSE_MODE", "auto").lower()
+    if audio_mode == "always":
+        wants_audio_response = True
+    elif audio_mode == "never":
+        wants_audio_response = False
+    else:
+        from tools.voice import is_audio_requested
+        input_was_audio = bool(media_info and media_info.get("input_is_audio"))
+        explicit_voice = is_audio_requested(prompt)
+        wants_audio_response = input_was_audio or explicit_voice
+
     try:
         reply = await run_agent_loop(
             user_prompt=prompt,
             user_id=user_id,
             channel=channel,
-            on_step=on_step_notification
+            on_step=on_step_notification,
+            media_info=media_info
         )
-        # Devolve a resposta final completa
+        # Devolve a resposta final completa em texto
         await send_channel_message(user_id, channel, reply)
+
+        # Se resposta em áudio foi solicitada ou a mensagem de entrada foi um áudio
+        if wants_audio_response:
+            try:
+                from tools.voice import generate_tts_audio
+                from channels import send_channel_audio
+                audio_file = await generate_tts_audio(reply)
+                if audio_file:
+                    await send_channel_audio(user_id, channel, str(audio_file))
+            except Exception as voice_err:
+                logger.warning(f"Erro ao sintetizar/enviar resposta em áudio: {voice_err}")
     except asyncio.CancelledError:
         logger.info(f"Tarefa do usuário {user_id} cancelada com sucesso.")
     except Exception as e:
@@ -798,7 +784,7 @@ async def evolution_webhook(request: Request, background_tasks: BackgroundTasks)
     except Exception:
         return {"status": "ignored", "reason": "invalid_json"}
 
-    remote_jid, clean_number, text = extract_evolution_message(body)
+    remote_jid, clean_number, text, media_info = await extract_evolution_message(body)
     if not remote_jid or not text:
         return {"status": "ignored"}
 
@@ -812,7 +798,7 @@ async def evolution_webhook(request: Request, background_tasks: BackgroundTasks)
         return {"status": "unauthorized"}
 
     # Processa em background para responder imediatamente 200 OK ao webhook da Evolution
-    background_tasks.add_task(process_user_request, remote_jid, "whatsapp", text)
+    background_tasks.add_task(process_user_request, remote_jid, "whatsapp", text, media_info)
     return {"status": "queued"}
 
 @app.post("/webhook/telegram")
@@ -825,7 +811,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     except Exception:
         return {"status": "ignored", "reason": "invalid_json"}
 
-    chat_id, text = extract_telegram_message(body)
+    chat_id, text, media_info = await extract_telegram_message(body)
     if not chat_id or not text:
         return {"status": "ignored"}
 
@@ -838,7 +824,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         return {"status": "unauthorized"}
 
     # Processa em background para liberar o webhook do Telegram
-    background_tasks.add_task(process_user_request, chat_id, "telegram", text)
+    background_tasks.add_task(process_user_request, chat_id, "telegram", text, media_info)
     return {"status": "queued"}
 
 class DirectExecRequest(BaseModel):

@@ -17,10 +17,59 @@ def _clean_expired_cache():
     for k in expired:
         _recently_sent_messages.pop(k, None)
 
-def extract_evolution_message(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+async def get_evolution_media_base64(data_payload: Dict[str, Any], message_id: str) -> Optional[Tuple[str, str]]:
+    """
+    Obtém o conteúdo em Base64 e o mimetype de uma mídia recebida via Evolution API.
+    Verifica primeiro no payload do webhook; caso não esteja, consulta o endpoint getBase64FromMediaMessage.
+    """
+    if not settings.EVOLUTION_API_URL or not settings.EVOLUTION_INSTANCE_NAME:
+        return None
+
+    msg_obj = data_payload.get("message", {})
+    img_obj = msg_obj.get("imageMessage", {})
+    audio_obj = msg_obj.get("audioMessage", {})
+    doc_obj = msg_obj.get("documentMessage", {})
+
+    # 1. Verifica se já veio em base64 direto no payload do webhook
+    for obj in [img_obj, audio_obj, doc_obj, data_payload]:
+        if isinstance(obj, dict):
+            b64 = obj.get("base64")
+            mimetype = obj.get("mimetype") or ("image/jpeg" if img_obj else "audio/ogg")
+            if b64:
+                return b64, mimetype
+
+    # 2. Chama a API da Evolution para obter a mídia descriptografada em Base64
+    url = f"{settings.EVOLUTION_API_URL.rstrip('/')}/chat/getBase64FromMediaMessage/{settings.EVOLUTION_INSTANCE_NAME}"
+    headers = {
+        "Content-Type": "application/json",
+        "apikey": settings.EVOLUTION_API_KEY
+    }
+
+    payloads_to_try = [
+        {"message": {"key": {"id": message_id}}, "convertToMp4": False},
+        {"message": data_payload, "convertToMp4": False}
+    ]
+
+    for p in payloads_to_try:
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                resp = await client.post(url, json=p, headers=headers)
+                if resp.status_code in [200, 201]:
+                    res_json = resp.json()
+                    b64 = res_json.get("base64")
+                    mimetype = res_json.get("mimetype") or ("image/jpeg" if img_obj else "audio/ogg")
+                    if b64:
+                        return b64, mimetype
+        except Exception:
+            pass
+
+    return None
+
+async def extract_evolution_message(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[Dict[str, Any]]]:
     """
     Extrai informações cruciais do webhook da Evolution API:
-    Retorna: (sender_id, clean_number, message_text) ou (None, None, None)
+    Retorna: (target_jid, clean_number, message_text, media_info) ou (None, None, None, None)
+    media_info pode conter detalhes de imagem ou áudio transcrito.
     """
     _clean_expired_cache()
 
@@ -28,7 +77,7 @@ def extract_evolution_message(payload: Dict[str, Any]) -> Tuple[Optional[str], O
     
     # Eventos aceitos de mensagem recebida
     if event not in ["messages.upsert", "messages_upsert"]:
-        return None, None, None
+        return None, None, None, None
 
     data = payload.get("data", {})
     key = data.get("key", {})
@@ -39,7 +88,7 @@ def extract_evolution_message(payload: Dict[str, Any]) -> Tuple[Optional[str], O
     
     # 1. Ignora sumariamente mensagens de grupos, canais, newsletters e broadcasts de status
     if not remote_jid or any(s in remote_jid for s in ["@g.us", "@broadcast", "@newsletter"]):
-        return None, None, None
+        return None, None, None, None
 
     remote_jid_alt = key.get("remoteJidAlt", "")
     participant = key.get("participant", "") or data.get("participant", "")
@@ -56,60 +105,85 @@ def extract_evolution_message(payload: Dict[str, Any]) -> Tuple[Optional[str], O
             target_jid = participant
 
     if not target_jid:
-        return None, None, None
+        return None, None, None, None
 
-    # Extrai o texto da mensagem
     message_content = data.get("message", {})
+    message_id = key.get("id", "")
+    media_info: Optional[Dict[str, Any]] = None
     text = ""
+
+    # Extração de texto e mídias multimodais (Imagens e Áudios)
     if "conversation" in message_content and message_content["conversation"]:
         text = message_content["conversation"]
     elif "extendedTextMessage" in message_content:
         text = message_content["extendedTextMessage"].get("text", "")
     elif "imageMessage" in message_content:
-        text = message_content["imageMessage"].get("caption", "")
+        caption = message_content["imageMessage"].get("caption", "").strip()
+        text = caption or "Analise esta imagem em detalhes e me diga o que há nela ou resolva o que for necessário."
+        b64_res = await get_evolution_media_base64(data, message_id)
+        if b64_res:
+            b64_data, mime = b64_res
+            media_info = {
+                "type": "image",
+                "mimetype": mime or "image/jpeg",
+                "base64": b64_data,
+                "caption": caption
+            }
+    elif "audioMessage" in message_content:
+        # Áudio recebido do usuário (nota de voz ou áudio encaminhado)
+        b64_res = await get_evolution_media_base64(data, message_id)
+        if b64_res:
+            b64_data, mime = b64_res
+            try:
+                from tools.voice import transcribe_audio_bytes
+                raw_bytes = base64.b64decode(b64_data.split(",")[-1])
+                transcription = await transcribe_audio_bytes(raw_bytes, mime or "audio/ogg")
+                text = transcription.strip()
+            except Exception as e:
+                text = ""
+
+            if not text:
+                text = "[Áudio enviado pelo usuário]"
+                
+            media_info = {
+                "type": "audio",
+                "mimetype": mime or "audio/ogg",
+                "base64": b64_data,
+                "transcription": text,
+                "input_is_audio": True
+            }
 
     text = text.strip()
     if not text:
-        return None, None, None
+        return None, None, None, None
 
     # Verifica se o texto é um eco exato de algo que o bot acabou de enviar via API
     if text in _recently_sent_messages:
-        return None, None, None
+        return None, None, None, None
 
     # Extrai apenas os dígitos do número do destinatário/remetente
     clean_number = re.sub(r"\D", "", target_jid.split("@")[0])
     allowed = settings.allowed_users_set
     guests = settings.guest_users_set
 
-    # =========================================================================
-    # REGRAS CRÍTICAS DE PRIVACIDADE E FILTRAGEM (WHATSAPP PESSOAL)
-    # =========================================================================
+    # Regras de privacidade
     is_owner = (clean_number in allowed) if allowed else True
     is_guest = (clean_number in guests)
 
     if not is_owner and not is_guest:
-        # Número não autorizado nem como dono nem como convidado de mídia: descarta imediatamente
-        return None, None, None
+        return None, None, None, None
 
     if is_from_me:
-        # Mensagem enviada pelo próprio usuário no app do WhatsApp.
-        # REGRA MANDATÓRIA: Só processa se for no chat consigo mesmo ("Message Yourself" / "Você")!
-        # Se remote_jid for outra pessoa (amigo, cliente, familiar ou convidado), o usuário está conversando
-        # com outra pessoa e o bot JAMAIS deve se intrometer ou responder!
         if not is_owner:
-            return None, None, None
+            return None, None, None, None
     else:
-        # Mensagem recebida de fora (alguém mandando mensagem para o WhatsApp do usuário).
         if is_guest and not is_owner:
-            # CONVIDADO DE MÍDIA:
-            # O agente só deve interagir se houver um link de mídia explícito (YouTube, Reels, TikTok, etc.)
-            # Se a mensagem não contiver link, permanece em SILÊNCIO TOTAL para evitar conflitos!
             from tools.youtube_downloader import extract_media_url
             media_url = extract_media_url(text)
             if not media_url:
-                return None, None, None
+                return None, None, None, None
 
-    return target_jid, clean_number, text
+    return target_jid, clean_number, text, media_info
 
 def format_whatsapp_message(text: str) -> str:
     """
@@ -249,4 +323,45 @@ async def send_evolution_media(
     except Exception as e:
         print(f"[Evolution API] Exceção ao enviar mídia: {str(e)}")
         return False
+
+async def send_evolution_audio_ptt(recipient: str, audio_file_path: str) -> bool:
+    """
+    Envia áudio como nota de voz gravada no WhatsApp (PTT / Voice Note) via Evolution API.
+    Aparece no celular do usuário como gravação de microfone com as ondas sonoras verdes.
+    """
+    if not settings.EVOLUTION_API_URL or not settings.EVOLUTION_INSTANCE_NAME:
+        print("[Evolution API] Erro: URL da Evolution ou Nome da Instância não configurados.")
+        return False
+
+    p = Path(audio_file_path)
+    if not p.exists():
+        print(f"[Evolution API] Arquivo de áudio não encontrado: {audio_file_path}")
+        return False
+
+    raw_bytes = p.read_bytes()
+    b64_data = base64.b64encode(raw_bytes).decode("utf-8")
+    number_target = recipient.split("@")[0] if "@" in recipient else recipient
+
+    # 1. Tenta endpoint nativo sendWhatsAppAudio (simula gravação de voz PTT)
+    url_ptt = f"{settings.EVOLUTION_API_URL.rstrip('/')}/message/sendWhatsAppAudio/{settings.EVOLUTION_INSTANCE_NAME}"
+    headers = {
+        "Content-Type": "application/json",
+        "apikey": settings.EVOLUTION_API_KEY
+    }
+    payload_ptt = {
+        "number": number_target,
+        "audio": b64_data,
+        "delay": 1200,
+        "encoding": True
+    }
+    try:
+        async with httpx.AsyncClient(timeout=35.0) as client:
+            resp = await client.post(url_ptt, json=payload_ptt, headers=headers)
+            if resp.status_code in [200, 201]:
+                return True
+    except Exception as e:
+        print(f"[Evolution API] Falha no endpoint sendWhatsAppAudio: {e}. Tentando fallback sendMedia...")
+
+    # 2. Fallback: sendMedia com mediatype audio
+    return await send_evolution_media(recipient, str(p), media_type="audio", file_name="audio.mp3")
 

@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     # UI/UX & Design Intelligence: Mobbin
     MOBBIN_API_KEY: Optional[str] = Field(default=None, validation_alias=AliasChoices("MOBBIN_API_KEY", "MOBBIN_TOKEN"))
 
+    # Voz & Resposta em Áudio (TTS com Edge-TTS)
+    TTS_VOICE: str = Field(default="pt-BR-AntonioNeural", validation_alias=AliasChoices("TTS_VOICE", "VOICE_NAME"))
+    AUDIO_RESPONSE_MODE: str = Field(default="auto", validation_alias=AliasChoices("AUDIO_RESPONSE_MODE", "VOICE_REPLY_MODE"))  # "auto", "always", "never"
+    TTS_SPEED: str = "+0%"
+
     @property
     def allowed_users_set(self) -> Set[str]:
         """Retorna uma lista limpa dos IDs e números autorizados com normalização de 9º dígito BR."""

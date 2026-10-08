@@ -111,3 +111,27 @@ def create_directory(path: str) -> str:
         return f"[SUCESSO]: Diretório '{target}' criado com sucesso."
     except Exception as e:
         return f"[ERRO AO CRIAR DIRETÓRIO]: {str(e)}"
+
+def replace_in_file(path: str, target_text: str, replacement_text: str) -> str:
+    """
+    Substitui um trecho específico de texto dentro de um arquivo existente.
+    Ideal para correções e edições cirúrgicas sem precisar reescrever o arquivo inteiro.
+    """
+    target = _resolve_path(path)
+    if not target.exists():
+        return f"[ERRO]: O arquivo '{path}' não existe."
+    if not target.is_file():
+        return f"[ERRO]: '{path}' é um diretório, não um arquivo."
+
+    try:
+        content = target.read_text(encoding="utf-8", errors="replace")
+        if target_text not in content:
+            return f"[ERRO]: O trecho exato a substituir não foi encontrado em '{target.name}'. Certifique-se de passar o trecho exato."
+
+        occurrences = content.count(target_text)
+        new_content = content.replace(target_text, replacement_text, 1)
+        target.write_text(new_content, encoding="utf-8")
+        extra_note = f" (Aviso: havia {occurrences} ocorrências; a primeira foi substituída)." if occurrences > 1 else ""
+        return f"[SUCESSO]: Arquivo '{target.name}' editado com sucesso{extra_note}."
+    except Exception as e:
+        return f"[ERRO AO SUBSTITUIR EM ARQUIVO]: {str(e)}"
