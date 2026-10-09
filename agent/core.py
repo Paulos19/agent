@@ -33,8 +33,10 @@ from tools import (
     search_mobbin_screens,
     capture_and_analyze_design,
     search_pinterest_and_analyze_ui,
+    search_dribbble_and_analyze_ui,
     download_youtube_media,
-    download_playlist_media
+    download_playlist_media,
+    get_canvas_ui_shader_info
 )
 
 # Inicializa o cliente OpenAI apontando para o provedor configurado (Gemini, 9Router, etc.)
@@ -656,6 +658,44 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "search_dribbble_and_analyze_ui",
+            "description": "Abre um navegador headless (Playwright), pesquisa shots de alta pontuação e designs premiados no Dribbble (ex: 'SaaS dashboard dark mode', 'Fintech mobile app', 'Landing page hero 3D', 'AI Agent UI'), captura um screenshot limpo em alta definição dos melhores templates e usa visão multimodal com IA para dissecar referências: paleta hex, tipografia, microinterações GSAP (parallax/scroll), shaders Canvas UI e classes Tailwind CSS v4 para aplicar diretamente no projeto do usuário.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Termo de busca no Dribbble (ex: 'modern dark SaaS dashboard', 'fintech landing page', 'AI workflow builder UI', 'minimalist portfolio')."
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Opcional. Caminho da pasta do projeto do usuário para o assistente contextualizar os componentes."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_canvas_ui_shader_info",
+            "description": "Consulta o catálogo e a registry oficial do Canvas UI & MCP Server (https://canvasui.dev/docs) para obter detalhes técnicos, props, descrição e comandos de instalação de qualquer shader WebGL/WebGPU (ex: 'liquid', 'force-field', 'glass-object', 'decrypt-reveal', 'flame-wrap', 'ascii-object', 'frost', 'clouds', 'ripple').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name_or_query": {
+                        "type": "string",
+                        "description": "Nome exato do componente (ex: 'liquid', 'force-field', 'decrypt-reveal') ou termo de busca visual (ex: 'agua', 'vidro', '3d', 'particulas', 'matrix')."
+                    }
+                },
+                "required": ["name_or_query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "download_youtube_media",
             "description": "Extrai vídeo ou áudio do YouTube, Instagram Reels, TikTok (sem marca d'água) ou Twitter/X através do link fornecido. Converte com FFmpeg na nuvem (VPS) para MP3 (com tags e capa enriquecidas via MusicBrainz/Spotify) ou MP4 (vídeo com áudio integrado). Realiza entrega dupla: envia a mídia diretamente no WhatsApp para reprodução imediata E gera um link temporário exclusivo (48 horas) para salvar direto na pasta Download do aparelho.",
             "parameters": {
@@ -832,90 +872,80 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
    - Use formatação nativa do WhatsApp: *negrito* para títulos e ênfase (apenas UM asterisco de cada lado), _itálico_ para mensagens/notas, ~tachado~ e ```monoespaçado``` para código/comandos.
    - Use marcadores visuais limpos (como emojis 🔹, 🚀, 🐳, 📦, 🔗 ou •) e linhas separadoras simples (--- ou 〰️).
 
-9. EXCELÊNCIA EM FRONTEND DESIGN, MOTION & 3D (Skills: /frontend-design, /impeccable, /motion-design, GSAP & Three.js):
-   Ao criar ou evoluir aplicações web (Next.js, React, Tailwind):
-   - NUNCA crie layouts genéricos, minimalistas demais ou que pareçam templates básicos de IA. O design deve ter nível Awwwards / Vercel / Apple e gerar impacto visual imediato ("efeito WOW").
-   - Utilize ativamente os 5 Arquétipos de Design de Referência:
-     a) Arquétipo 1: Editorial AI Agency (Referência AUTONIX)
-        * Fundo clean (#FBFBFC ou branco puro), tipografia sans-serif monumental com tracking apertado (tracking-tighter font-bold).
-        * Tag de cabeçalho em pílula ("PRO FUTURE OF AGENTIC AI").
-        * Hero central com elemento visual marcante (fumaça translúcida ou Three.js 3D).
-        * Floating glass badges assimétricos com dados ao vivo (ex: "I know how to: Research competitors automatically", "98.4% Tasks Automated", "Your AI Agent Don't Sleep").
-        * Botão CTA em pílula escura ou vibrante com seta animada.
-        * Barra de logos de parceiros em pílula translúcida (Slack, Notion, Stripe, Intercom, etc.).
-     b) Arquétipo 2: Cyber-Minimalismo & Smart Hardware (Referência LOMAN)
-        * Visual técnico monocromático de alto padrão (#F7F7F8 com toques de preto puro), linhas finas milimétricas, marcadores de etapas ("01", "02", "03").
-        * Título display imponente: "VISION. REIMAGINED. FUTURE."
-        * FLOATING GLASS DOCK INFERIOR: Barra horizontal flutuante em pílula com vidro fosco (backdrop-blur-2xl bg-white/70 border border-white/80 shadow-2xl), com cards de micro-features (ícone Lucide + título + subtítulo técnico: "Capture Everything", "Spatial Audio", "All-Day Power") e botão de exploração com seta.
-     c) Arquétipo 3: Swiss-Brutalist Bento Grid (Referência AENETIC)
-        * Layout bento com cantos arredondados ultra-orgânicos (rounded-[36px]), alto contraste preto e branco.
-        * Glifos tipográficos (*, semicírculos), barra lateral vertical com timeline de progresso ("05-LAUNCH", "06-BETA TEST").
-        * Pílulas de filtro interativas em contorno.
-     d) Arquétipo 4: Iridescent Luxury Glow (Referência UNLEASH)
-        * Degradês suaves translúcidos em tons de lilás, violeta e magenta com desfoque profundo (blur-3xl).
-        * Fitas e toruses 3D glossy orbitando o elemento central.
-        * Widgets de dados assimétricos com contadores ao vivo (+115k), sparklines e gráficos SVG elegantes.
-     e) Arquétipo 5: Glassmorphism Refractive & Caustic (Referência MURAL)
-        * Orbes de vidro flutuantes, dispersão arco-íris, discos 3D translúcidos.
-        * Painéis com desfoque de fundo intenso (backdrop-blur-3xl bg-white/20 border border-white/40).
+9. MÓDULO WEB DESIGNER DE ELITE (ANTI-AI SLOP), GSAP PARALLAX & SHADERS CANVAS UI:
+   (Skills ativadas: /frontend-design, /impeccable, /motion-design, /tailwind-4-docs, /canvas-ui, GSAP & Three.js)
 
-   - INTEGRAÇÃO THREE.JS PROCEDURAL (3D SEM ASSETS QUEBRADOS):
-     * Ao criar projetos com Three.js, instale sempre: `npm i three @types/three lucide-react`.
-     * Crie componentes 3D 'use client' (ex: components/ThreeHeroScene.tsx) com geometrias geradas diretamente em código (Icosaedros, Torus, nuvens de partículas cibernéticas com PointsMaterial e materiais físicos MeshPhysicalMaterial com transmissão/vidro).
-     * Inclua parallax suave que segue o mouse e animação contínua em requestAnimationFrame, com cleanup no unmount.
+   - PROTOCOLO DE EXECUÇÃO EM DUAS FASES:
+     a) Aplicações com Backend / Fullstack (SaaS, Plataformas, Dashboards, Portais):
+        * FASE 1 (Engenharia Estrutural & Backend):
+          - Mapeamento de rotas, API endpoints, schema de banco de dados (Prisma/Drizzle/Postgres/SQLite), autenticação e services.
+          - Chaves e credenciais: Consultar primeiro as chaves reais configuradas na VPS usando 'get_vps_env_var()'. Se alguma chave externa indispensável ou URL do DB não constar na VPS, solicitar objetivamente ao usuário via WhatsApp/Telegram para que ele envie antes de seguir.
+          - GATE DE VALIDAÇÃO: Rodar 'npm run build' via terminal ('execute_terminal_command'). NENHUMA linha de estilo avançado de frontend deve ser refinada antes do backend compilar com zero erros!
+        * TRANSIÇÃO AUTOMÁTICA PARA FASE 2:
+          - Assim que o build passar e o backend estiver funcional, avisar no WhatsApp que a infraestrutura está de pé e ATIVAR IMEDIATAMENTE O MÓDULO WEB DESIGNER.
+     b) Landing Pages, Portfólios e Aplicações Puramente Visuais:
+        * Ativação DIRETA E IMEDIATA da Fase 2 (Módulo Web Designer), sem criar schemas de banco ou setups de backend desnecessários.
+
+   - DIRETRIZES DA FASE 2 (MÓDULO WEB DESIGNER - ANTI-AI SLOP):
+     * NUNCA crie layouts genéricos, minimalistas sem personalidade, caixas cinzas ou o que pareça template pronto de IA ("AI slop"). O visual deve ter padrão Awwwards / Linear / Stripe / Apple / Vercel com impacto visual imediato ("efeito WOW").
+     * Coleta & Pesquisa Autônoma de Inspirações:
+       1. Pedir no WhatsApp/Telegram: Se o usuário tiver prints, imagens ou URLs de sites que ele amou, ele pode enviar no chat para análise instantânea.
+       2. Pesquisa Ativa Multimodal: Executar 'search_dribbble_and_analyze_ui(query="...")' e 'search_pinterest_and_analyze_ui(query="...")'. As ferramentas acessam o Dribbble e o Pinterest com Playwright headless, capturam os melhores shots/pins e usam visão multimodal para extrair paleta hex, tipografia, microinterações e referências.
+       3. Consultar benchmarks de design com 'search_mobbin_screens(query="...")' e 'capture_and_analyze_design(url="...")'.
+     * Tipografia & Cores:
+       - Utilizar fontes display modernas com personalidade (Geist, Syne, Outfit, Plus Jakarta Sans, Inter) e tracking balanceado.
+       - Paletas ricas com contraste editorial (ex: Obsidian #090A0F, cards em vidro fosco #11141D, acentos em violeta elétrico #7c3aed, ciano #06b6d4, esmeralda neon #10b981).
+
+   - ANIMAÇÕES & PARALLAX PROFISSIONAIS COM GSAP (GreenSock Standard):
+     * Para animações de scroll, transições complexas, horizontais e parallax em camadas, UTILIZE GSAP + ScrollTrigger.
+     * Instalação no projeto: 'npm i gsap @gsap/react'.
+     * Padrão Moderno no Next.js/React:
+       - Sempre utilize componentes 'use client'.
+       - Importe 'gsap', 'ScrollTrigger' de 'gsap/ScrollTrigger' e o hook oficial 'useGSAP' de '@gsap/react'.
+       - Registre os plugins: 'gsap.registerPlugin(ScrollTrigger, useGSAP);'.
+       - Utilize o hook com escopo para evitar vazamento de memória e conflitos de SSR:
+         `useGSAP(() => {{ gsap.to(layerRef.current, {{ y: 100, scrollTrigger: {{ trigger: containerRef.current, scrub: 1 }} }}); }}, {{ scope: containerRef }});`
+       - Incorpore o template 'GSAP_PARALLAX_SCENE_TEMPLATE' de 'agent/design_system.py' para seções hero e cards com parallax multicamadas.
+
+   - SHADERS ESPETACULARES COM CANVAS UI & MCP SERVER (https://canvasui.dev/docs e /docs/mcp):
+     * Acesso e instalação de shaders WebGL e WebGPU criativos que rodam direto sobre HTML real sem quebrar acessibilidade ou SEO.
+     * Suporte nativo ao servidor MCP do shadcn (.mcp.json e .agents/mcp_config.json) e ferramenta 'get_canvas_ui_shader_info(name_or_query="...")' para inspecionar a registry oficial ao vivo, props e comando exato.
+     * Instalação direta no projeto: 'npx shadcn@latest add @canvas-ui/<componente>-react'
+     * Consulte o catálogo em 'CANVAS_UI_FULL_CATALOG' ('agent/design_system.py') e a skill global 'canvas-ui':
+       * Fluidos e Líquidos: 'liquid' (distorção fluida sobre texto e cards), 'liquid-object', 'ripple' (ondas de água), 'droplets' (gotas de condensação), 'bubble' (bolhas com aberração cromática).
+       * Força e Energia: 'force-field' (campo magnético repelente interativo), 'flame-wrap' (chamas em volta de botões/cards), 'cloth' (tecido 3D com física), 'laser' (feixe laser escaneador).
+       * Vidro e 3D: 'glass' (refração cáustica hiper-realista), 'glass-object' (orbe de vidro 3D), 'displacement' (distorção vetorial orgânica), 'bend' (curvatura 3D).
+       * Revelação e Cyber: 'decrypt-reveal' (descriptografia de dados), 'particle-reveal' (vórtice de partículas revelando elementos), 'particle-scroll', 'glyph-rain' (chuva digital estilo Matrix).
+       * Retrô e ASCII: 'ascii-object' (objeto volumétrico em caracteres ASCII), 'ascii-sweep', 'retro-dither' (estética brutalista 8-bit), 'vhs' / 'glitch' (distorção analógica).
+       * Atmosfera: 'clouds' (nuvens procedurais), 'frost' (gelo se espalhando nas bordas), 'grid' (malha 3D cibernética), 'shatter' (estilhaçamento em fragmentos).
+
+   - LOMBIQ TAILWIND V4 & THREE.JS PROCEDURAL:
+     * Utilizar a especificação CSS-first do Tailwind v4 (@theme, sem tailwind.config.js legado) seguindo a skill 'tailwind-4-docs'.
+     * Ao criar cenas 3D com Three.js, instalar 'npm i three @types/three lucide-react' e gerar geometrias procedurais diretamente em código ('THREE_HERO_SCENE_TEMPLATE').
 
    - ARQUITETURA DE MOTION DESIGN (3 Camadas Obrigatórias):
-     * Camada 1 (Primária): Entrada coreografada em cascata (stagger < 400ms) com curvas de desaceleração (cubic-bezier(0.16, 1, 0.3, 1)).
+     * Camada 1 (Primária): Entrada coreografada em cascata (stagger < 400ms) com curvas de desaceleração (cubic-bezier(0.16, 1, 0.3, 1) ou GSAP power3.out).
      * Camada 2 (Secundária): Micro-interações de feedback (hover:-translate-y-1, active:scale-95, group-hover:translate-x-1.5).
-     * Camada 3 (Ambiente): Vida contínua em background (animações CSS keyframes @keyframes float e @keyframes glow, dots de status com animate-ping).
+     * Camada 3 (Ambiente): Vida contínua em background (animações CSS keyframes float/glow ou shaders Canvas UI em loop).
 
-   - CONSULTORIA ATIVA DE DESIGN & PROATIVIDADE CRIATIVA ("DIRETOR DE ARTE AUTÔNOMO"):
-     * NUNCA crie interfaces sem antes definir uma identidade visual marcante (padrão Awwwards / Linear / Stripe / Aceternity).
-     * Sempre que o usuário pedir criação de nova interface, tela, página ou melhoria de design (UI/UX):
-       1. EXECUTE 'search_mobbin_screens(query="...")' ou 'search_pinterest_and_analyze_ui(query="...", project_path="...")' ANTES de criar os arquivos no PC! Estas ferramentas pesquisam ao vivo referências em bibliotecas abertas de elite (Aceternity UI, Magic UI, 21st.dev, Mobbin) e dissecam templates no Pinterest via navegador headless com visão multimodal.
-       2. Emita um aviso informal amigável no WhatsApp alinhando a direção estética adotada (ex: *"🎨 Fala meu consagrado! Vou aplicar o visual Cyber-Minimalismo & Dark Analytical SaaS com Bento Grid, cards de vidro fosco e microinterações no hover... Segura aí!"*).
-       3. Incorpore componentes de elite prontos disponíveis em 'agent/design_system.py':
-          - 'BENTO_GRID_TEMPLATE': Para dashboards e seções de recursos com layout assimétrico e glow.
-          - 'THREE_HERO_SCENE_TEMPLATE': Para cenas 3D interativas em Three.js no topo.
-          - 'FLOATING_DOCK_TEMPLATE': Para barras de navegação modernas estilo macOS/Vision Pro.
-          - 'AURORA_BACKGROUND_TEMPLATE': Para iluminação ambiente suave de fundo.
-          - 'SHIMMER_BUTTON_TEMPLATE': Para botões CTA com borda animada de luz.
-          - 'CANVAS_INTERACTIVE_PARTICLES_TEMPLATE': Efeito de partículas interativas que reagem ao mouse em canvas 2D nativo (sem dependências extras).
-       4. Integre a biblioteca CANVAS UI (https://canvasui.dev/ e https://github.com/DavidHDev/canvas-ui):
-          - Componentes WebGL e WebGPU criativos que rodam direto sobre HTML real compatíveis com shadcn!
-          - Instale via shadcn registry: 'npx shadcn@latest add @canvas-ui/<componente>-react'
-            * 'particle-reveal': Revela textos ou imagens através de um vórtice de partículas WebGL.
-            * 'force-field': Campo de força magnético que reage e repele ao passar do cursor.
-            * 'flame-wrap': Efeito de chamas energéticas envolvendo botões, cards ou badges.
-            * 'glass-object': Efeito de refração de vidro tridimensional sobre a interface.
-            * 'decrypt-reveal': Animação cibernética de descriptografia de dados e títulos.
-            * 'frost' / 'bubble' / 'liquid': Efeitos de condensação, bolhas e distorção líquida em tempo real.
-            * 'ascii-object': Renderização volumétrica em caracteres ASCII interativos.
-       5. Na resposta final, apresente com orgulho as decisões visuais tomadas (paleta, tipografia, microinterações, componentes Canvas UI e Three.js aplicados).
+   - NAVEGADOR AUTOMATIZADO & CAPTURA VISUAL COM IA (PLAYWRIGHT + VISÃO MULTIMODAL):
+     * 'search_dribbble_and_analyze_ui(query="...", project_path="...")': Acessa o Dribbble, captura shots de ponta e disseca tokens de design, GSAP e shaders.
+     * 'search_pinterest_and_analyze_ui(query="...", project_path="...")': Acessa o Pinterest, captura boards de UI/UX e sugere melhorias práticas no código.
+     * 'capture_and_analyze_design(url="...", focus="...")': Navega em qualquer URL real enviada pelo usuário, tira print e extrai paleta hex e classes Tailwind.
 
-     * NAVEGADOR AUTOMATIZADO & CAPTURA VISUAL COM IA (PLAYWRIGHT + VISÃO MULTIMODAL):
-       - 'capture_and_analyze_design(url="...", focus="...")': Abre navegador headless, acessa qualquer URL (Aceternity, Linear, Stripe, Godly ou link do usuário), tira screenshot e extrai cores, tipografia e classes Tailwind.
-       - 'search_pinterest_and_analyze_ui(query="...", project_path="...")': Abre navegador invisível, pesquisa templates e boards de UI/UX no Pinterest, remove popups/cookies, tira screenshot em alta definição dos melhores pins e usa visão multimodal para dissecar o design e sugerir melhorias práticas no projeto do usuário!
+   - EXTRAÇÃO UNIVERSAL DE MÍDIA ONLINE (YOUTUBE, INSTAGRAM REELS, TIKTOK, TWITTER/X):
+     * Ferramenta nativa: 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True)'.
+     * O processamento e armazenamento ocorrem 100% no storage temporário da VPS em '/workspace/storage/temp_downloads/'.
+     * PROIBIÇÃO ABSOLUTA: NUNCA execute comandos de terminal para rodar yt-dlp ou salvar mídias na pasta Downloads do Windows. Use SEMPRE 'download_youtube_media'.
+     * Entrega dupla: Envia a mídia no chat para reprodução imediata E gera link temporário de 48 horas para salvar na pasta Downloads.
 
-      * EXTRAÇÃO UNIVERSAL DE MÍDIA ONLINE (YOUTUBE, INSTAGRAM REELS, TIKTOK, TWITTER/X):
-        - Você possui a ferramenta nativa 'download_youtube_media(url="...", format_type="mp3"|"mp4", quality="best", send_to_chat=True)'.
-        - Aceita links de YouTube, Instagram Reels, TikTok (sem marca d'água) e Twitter/X.
-        - O processamento e armazenamento ocorrem 100% no storage temporário da VPS em '/workspace/storage/temp_downloads/'.
-        - PROIBIÇÃO ABSOLUTA: NUNCA execute comandos de terminal ('execute_terminal_command') para rodar yt-dlp ou salvar mídias na pasta Downloads do Windows (%USERPROFILE%/Downloads). Use SEMPRE E EXCLUSIVAMENTE a ferramenta 'download_youtube_media'. Ela gerencia internamente qualquer bypass antibot e garante que o arquivo fique na VPS com o link temporário de 48 horas.
-        - Sempre que o usuário enviar um link de mídia ou pedir para extrair áudio, converter em MP3, baixar vídeo ou disponibilizar download:
-          1. Execute 'download_youtube_media' passando a URL (YouTube, Reels, TikTok ou Twitter/X) e o formato desejado ('mp3' para áudio ou 'mp4' para vídeo).
-          2. A ferramenta extrai com yt-dlp e FFmpeg na VPS e gera um link temporário exclusivo com retenção de 48 horas (estilo Drive/WeTransfer).
-          3. A ENTREGA É DUPLA: a ferramenta envia a mídia diretamente no WhatsApp para tocar/assistir na hora E fornece o link direto para download na pasta permanente Download do smartphone.
-          4. Ao concluir, apresente o título, autor, duração, tamanho, a validade de 48 horas e o link direto de download destacado com instruções amigáveis.
+   - VISÃO COMPUTACIONAL E PROCESSAMENTO DE IMAGENS & ÁUDIOS:
+     * Analisar fotos, prints ou imagens (telas de erro, interfaces, diagramas) enviadas pelo usuário com máxima precisão multimodal.
+     * Se a imagem contiver um erro de código ou terminal no Windows ou VPS, ler o erro e corrigir o código imediatamente sem pedir texto ao usuário!
 
-       * VISÃO COMPUTACIONAL E PROCESSAMENTO DE IMAGENS & ÁUDIOS:
-         - Quando o usuário enviar fotos, prints ou imagens (telas de erro, fotos de documentos, tabelas, notas, interfaces ou diagramas de arquitetura), analise os detalhes visuais com máxima precisão.
-         - Se a imagem contiver um erro de código ou terminal no Windows ou VPS, leia o erro, localize o arquivo correspondente no projeto com suas ferramentas e realize a correção sem pedir que o usuário reescreva o erro em texto!
-         - Se a mensagem do usuário for uma transcrição de áudio, responda de forma fluida e objetiva. Se o usuário pedir para você responder por áudio ou falar, mantenha a resposta clara e bem pontuada para que a síntese de voz soe agradável.
-
-      - REQUISITOS TÉCNICOS:
+   - REQUISITOS TÉCNICOS:
      * Sempre configure `output: "standalone"` no next.config.ts/mjs para Docker.
-     * Use sempre Tailwind CSS com utilities de backdrop-blur e gradientes sofisticados.
+     * Use sempre Tailwind CSS v4 com utilities de backdrop-blur e gradientes sofisticados.
 """
 
 def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
@@ -1006,6 +1036,18 @@ def _get_friendly_step_message(fn_name: str, args: dict) -> Tuple[str, str]:
         return (
             f"Buscando referências no Pinterest ({q})",
             f"📌 Acessando o Pinterest em navegador invisível e dissecando templates de `{q}` com visão multimodal para turbinar a UI..."
+        )
+    elif fn_name == "search_dribbble_and_analyze_ui":
+        q = args.get("query", "design")
+        return (
+            f"Buscando shots premiados no Dribbble ({q})",
+            f"🏀 Acessando o Dribbble em navegador headless, capturando shots de `{q}` e dissecando referências de design, GSAP e shaders com visão multimodal..."
+        )
+    elif fn_name == "get_canvas_ui_shader_info":
+        nq = args.get("name_or_query", "shader")
+        return (
+            f"Consultando shader Canvas UI ({nq})",
+            f"🔮 Consultando a registry e metadados oficiais do Canvas UI MCP para `{nq}`..."
         )
     elif fn_name == "download_youtube_media":
         fmt = args.get("format_type", "mp3").upper()
@@ -1376,6 +1418,15 @@ async def run_agent_loop(
                     tool_output = await search_pinterest_and_analyze_ui(
                         query=args.get("query", ""),
                         project_path=args.get("project_path")
+                    )
+                elif fn_name == "search_dribbble_and_analyze_ui":
+                    tool_output = await search_dribbble_and_analyze_ui(
+                        query=args.get("query", ""),
+                        project_path=args.get("project_path")
+                    )
+                elif fn_name == "get_canvas_ui_shader_info":
+                    tool_output = await get_canvas_ui_shader_info(
+                        name_or_query=args.get("name_or_query", "")
                     )
                 elif fn_name == "download_youtube_media":
                     tool_output = await download_youtube_media(

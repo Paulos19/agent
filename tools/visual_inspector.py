@@ -247,3 +247,127 @@ Forneça um raio-x arquitetural completo de design para transformar a interface 
     except Exception as vision_err:
         logger.error(f"[PinterestInspector] Erro na análise multimodal dos pins: {vision_err}")
         return f"[ERRO NA ANÁLISE DOS PINS]: {str(vision_err)}"
+
+
+async def search_dribbble_and_analyze_ui(query: str, project_path: Optional[str] = None) -> str:
+    """
+    Abre um navegador headless (Playwright / Chromium / Edge), pesquisa shots de alta pontuação
+    e designs premiados no Dribbble (https://dribbble.com/search/<query>), tira um screenshot limpo
+    em alta definição dos melhores templates e utiliza a visão multimodal do Gemini para dissecar
+    a estética: paleta de cores (hex), tipografia, microinterações GSAP (parallax/scroll), shaders
+    do Canvas UI recomendados e classes Tailwind CSS v4 para aplicar diretamente no projeto.
+    """
+    clean_query = query.strip()
+    encoded_query = urllib.parse.quote(clean_query)
+    dribbble_url = f"https://dribbble.com/search/{encoded_query}"
+
+    logger.info(f"[DribbbleInspector] Pesquisando shots de UI/UX no Dribbble para '{clean_query}'...")
+
+    screenshot_bytes: Optional[bytes] = None
+
+    try:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as p:
+            browser = await _launch_browser(p)
+            context = await browser.new_context(
+                viewport={"width": 1440, "height": 900},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+
+            # Navega até o Dribbble
+            await page.goto(dribbble_url, wait_until="domcontentloaded", timeout=35000)
+            await asyncio.sleep(3.5)
+
+            # Remove popups de cookies, banners de signup ou modais que bloqueiam a visualização dos shots
+            try:
+                await page.evaluate("""() => {
+                    const elements = document.querySelectorAll('[role="dialog"], [data-testid*="modal"], [id*="cookie"], [class*="cookie"], [class*="overlay"], [class*="signup-banner"]');
+                    elements.forEach(el => el.remove());
+                    document.body.style.overflow = "auto";
+                }""")
+            except Exception:
+                pass
+
+            # Rola levemente para baixo para carregar os shots com boa nitidez
+            try:
+                await page.evaluate("window.scrollBy(0, 350);")
+                await asyncio.sleep(1.2)
+            except Exception:
+                pass
+
+            screenshot_bytes = await page.screenshot(type="jpeg", quality=80, full_page=False)
+            await browser.close()
+
+    except Exception as browser_err:
+        logger.error(f"[DribbbleInspector] Falha ao navegar no Dribbble: {browser_err}")
+        return f"[ERRO AO ACESSAR DRIBBBLE]: Não foi possível pesquisar no Dribbble: {str(browser_err)}"
+
+    if not screenshot_bytes:
+        return f"[ERRO]: Falha ao capturar os shots do Dribbble para '{clean_query}'."
+
+    # Salva screenshot no scratch para histórico
+    try:
+        scratch_dir = Path("scratch")
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        img_path = scratch_dir / "dribbble_latest_search.jpg"
+        with open(img_path, "wb") as f:
+            f.write(screenshot_bytes)
+    except Exception:
+        pass
+
+    logger.info(f"[DribbbleInspector] Captura dos shots realizada ({len(screenshot_bytes)} bytes). Enviando para análise de design...")
+
+    try:
+        client = AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL)
+        b64_image = base64.b64encode(screenshot_bytes).decode("utf-8")
+
+        prompt = f"""Você é um Diretor de Arte Web sênior e Engenheiro Frontend focado em designs de padrão internacional (Awwwards, Linear, Stripe, Apple).
+Analise com olhar crítico e cirúrgico a captura de tela dos shots do Dribbble para o termo: '{clean_query}'.
+
+Forneça um raio-x arquitetural completo de design (Zero AI-Slop) para o projeto:
+1. **Padrões de Design Dominantes nos Shots Premiados:**
+   - Destaque a composição visual dos 2 melhores templates visíveis (ex: Bento Grid assimétrico, Dark Mode Obsidian com superfícies translúcidas, Hero cinematográfico).
+2. **Paleta de Cores Hexadecimal Extraída:**
+   - Fundo principal (ex: #090A0F)
+   - Cards/Superfícies (ex: #11141D ou rgba(255,255,255,0.04))
+   - Bordas sutis (ex: border-white/10 ou rgba(255,255,255,0.08))
+   - Cores de Acento/Glow (ex: Cyan neon, Violeta profundo, Esmeralda)
+3. **Tipografia e Hierarquia:**
+   - Fontes recomendadas (Geist, Outfit, Inter, Plus Jakarta Sans), tracking tight e contraste de pesos.
+4. **Coreografia de Animação com GSAP (GreenSock):**
+   - Efeito parallax suave com ScrollTrigger e scrub
+   - Pinned sections com stagger de entrada
+   - Microinterações de hover com cursor magnetic
+5. **Shaders Recomendados do Canvas UI (https://canvasui.dev/docs):**
+   - Indique quais componentes do Canvas UI casam com essa proposta (ex: 'liquid' para fluid pointer, 'force-field' para repulsão, 'decrypt-reveal' para títulos, 'glass-object' para refração 3D ou 'particle-reveal').
+6. **Blueprint Drop-In para o Projeto ({project_path or 'no projeto'}):**
+   - Estrutura pronta com Tailwind CSS v4, useGSAP e componentes prontos para copiar e colar no código.
+"""
+
+        response = await client.chat.completions.create(
+            model=settings.LLM_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}}
+                ]
+            }],
+            temperature=0.2
+        )
+
+        analysis = response.choices[0].message.content or "Nenhuma análise retornada pela visão multimodal."
+
+        return (
+            f"🏀 *Inspiração Visual do Dribbble Extraída com Sucesso para:* `{clean_query}`\n"
+            f"🔗 *URL da Pesquisa:* {dribbble_url}\n\n"
+            f"{analysis}\n\n"
+            f"🚀 *Aplicação*: O agente usará este blueprint para construir os componentes com GSAP, Canvas UI e Tailwind v4!"
+        )
+
+    except Exception as vision_err:
+        logger.error(f"[DribbbleInspector] Erro na análise multimodal dos shots: {vision_err}")
+        return f"[ERRO NA ANÁLISE DOS SHOTS DO DRIBBBLE]: {str(vision_err)}"
+

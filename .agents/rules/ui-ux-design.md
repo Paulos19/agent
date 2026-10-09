@@ -1,67 +1,156 @@
-# Diretrizes de UI/UX, Design System e Pesquisa Autônoma de Referências
+# Diretrizes de UI/UX, Design System, Motion GSAP e Shaders Canvas UI (Anti-AI Slop)
 
-Esta regra deve ser aplicada sempre que houver criação, reformulação ou formatação de interfaces de usuário (Web, Mobile, Dashboards, Landing Pages ou Componentes).
-
----
-
-## 1. Pesquisa Autônoma e Benchmark Visual de Elite
-
-Antes de gerar ou refatorar qualquer interface, o agente deve buscar referências ativas de produtos de padrão mundial (Linear, Stripe, Apple, Vercel, Supabase, Raycast):
-
-### Fontes e Ferramentas:
-1. **Mobbin MCP / API**:
-   - `search_screens`, `search_sections`, `search_flows` (quando disponível plano pago).
-2. **Bibliotecas Open-Source de "Design Engineering" (Gratuitas e Abertas)**:
-   - **[Canvas UI](https://canvasui.dev/)** ([GitHub](https://github.com/DavidHDev/canvas-ui)): Componentes WebGL/WebGPU criativos que rodam direto sobre HTML real compatíveis com shadcn (`npx shadcn@latest add @canvas-ui/<componente>-react`). Efeitos de ponta: `particle-reveal`, `force-field`, `flame-wrap`, `glass-object`, `decrypt-reveal`, `frost`, `ascii-object`, `liquid`.
-   - **[Aceternity UI](https://ui.aceternity.com/)**: Referência para Bento Grids, Aurora Backgrounds, 3D Pin cards, Glowing Stars e Tabs dinâmicas.
-   - **[Magic UI](https://magicui.design/)**: Referência para Shimmer Buttons, Text effects, Particle trails e Landing pages modernas.
-   - **[21st.dev](https://21st.dev/)**: Componentes comunitários em Tailwind CSS + Motion de alta fidelidade.
-   - **[Godly Website](https://godly.website/)** e **[Lapa Ninja](https://www.lapa.ninja/)**: Galerias visuais gratuitas para layout, tipografia e espaçamento.
-3. **Mecanismo de Pesquisa Ativa & Navegador Invisível**:
-   - `search_mobbin_screens(query="...")`: Executa automaticamente buscas na web em `canvasui.dev`, `ui.aceternity.com`, `magicui.design` e `21st.dev` para extrair receitas de código e padrões visuais atualizados.
-   - `search_pinterest_and_analyze_ui(query="...", project_path="...")`: Abre navegador invisível (Playwright headless), pesquisa templates e boards de UI/UX no Pinterest, limpa overlays e capturas de tela e utiliza visão multimodal para dissecar o design e sugerir melhorias práticas no projeto do usuário!
-   - `capture_and_analyze_design(url="...", focus="...")`: Navega em qualquer site da web, captura screenshot e disseca classes Tailwind, paleta hex e componentes.
+Esta regra é de cumprimento OBRIGATÓRIO em toda criação, reformulação ou evolução de interfaces de usuário (Web Apps, SaaS, Dashboards, Landing Pages, Mobile e Componentes) operadas pelo agente via WhatsApp ou Telegram.
 
 ---
 
-## 2. Proatividade & Modo "Diretor Criativo"
+## 1. Protocolo de Execução em Duas Fases
 
-O agente não é apenas um executor passivo de HTML/CSS:
-- **Alinhamento Estético Inicial**: Ao receber uma solicitação de tela ou projeto, o agente formula uma direção criativa marcante (Arquétipo, paleta e componentes de destaque) e avisa ou sugere a estética para o usuário antes de começar a codificar.
-- **Sugestão de Componentes de Luxo**: Propõe ativamente a inclusão de elementos como:
-  - *Canvas UI Components* (`particle-reveal`, `force-field`, `flame-wrap`, `glass-object`, `decrypt-reveal`).
-  - *CanvasInteractiveParticles* (efeito de partículas 2D nativas que reagem ao mouse).
-  - *Bento Grid* assimétrico com bordas translúcidas e glow no hover.
-  - *ThreeHeroScene* (Three.js 3D procedural gerado em código com orbe de vidro, malha física e partículas que reagem ao mouse).
-  - *FloatingGlassDock* (barra inferior flutuante em vidro fosco com ícones Lucide).
-  - *AuroraBackground* (efeito de luz ambiente dinâmico).
-  - *ShimmerButton* (botão CTA com borda de luz animada).
+### A. Aplicações Fullstack / Plataformas com Backend
+1. **Fase 1: Engenharia Estrutural & Backend (Infraestrutura First)**:
+   - Definição de rotas, API endpoints, serviços e schema de banco de dados (Prisma, Drizzle, PostgreSQL, SQLite).
+   - Coleta de credenciais: Consultar primeiro as chaves reais no `.env` da VPS via `get_vps_env_var()`. Caso alguma chave de API de terceiro (Stripe, Resend, OpenAI) ou URL externa do banco não esteja presente, solicitar de forma objetiva ao usuário via WhatsApp/Telegram antes de seguir.
+   - **Gate de Validação**: Executar `npm run build` no terminal para garantir compilação sem erros (`0 errors`).
+2. **Transição Automática para Fase 2**:
+   - Assim que o backend estiver estável e compilado, emitir notificação amigável e **ATIVAR IMEDIATAMENTE O MÓDULO WEB DESIGNER**.
 
----
-
-## 3. Princípios de Execução e Qualidade Visual (Anti-Genérico)
-
-### A. Hierarquia e Tipografia
-- Use fontes sans-serif contemporâneas (Geist, Inter, Outfit, Plus Jakarta Sans) com tracking ajustado.
-- Contraste rígido de peso entre títulos display e subtítulos muted.
-
-### B. Paleta de Cores e Superfícies
-- **Evite cores primárias brutas ou puras**. Use paletas semânticas equilibradas.
-- Em **Dark Mode**:
-  - Camadas de profundidade: Fundo escuro profundo (`#090A0F`), cards ligeiramente elevados (`#11141D` ou `#161922`).
-  - Bordas sutis e translúcidas (`border-white/10` ou `rgba(255, 255, 255, 0.08)`).
-  - Vidro fosco e blur (`backdrop-blur-xl bg-neutral-950/60`).
-
-### C. Microinterações e Motion (3 Camadas)
-1. **Entrada (Primária)**: Transições suaves em cascata com desaceleração.
-2. **Interação (Secundária)**: `hover:-translate-y-0.5`, `hover:border-white/20`, `active:scale-95`.
-3. **Ambiente (Terciária)**: Animações sutis contínuas em background (`animate-float`, `animate-pulse`, `animate-ping` nos badges de status).
+### B. Landing Pages, Portfólios e Projetos Visuais
+- **Ativação Direta**: Ativar imediatamente a **Fase 2 (Módulo Web Designer)** sem perda de tempo com configurações de banco ou backend desnecessárias.
 
 ---
 
-## 4. Fluxo de Trabalho do Agente
+## 2. Fase 2: Módulo Web Designer & Coleta Visual (Anti-AI Slop)
 
-1. **Pesquisa Autônoma**: Executar `search_mobbin_screens(query="...")` ou `search_pinterest_and_analyze_ui(query="...")` para capturar referências na web, pins no Pinterest e tokens do arquétipo.
-2. **Comunicação Proativa**: Informar o usuário sobre a escolha estética proposta via WhatsApp.
-3. **Implementação de Excelência**: Criar os arquivos aplicando os templates de `agent/design_system.py`, Canvas UI (`@canvas-ui/*`) e Tailwind CSS, cuidando de cada detalhe de espaçamento, responsividade e contraste.
-4. **Validação & Entrega**: Revisar se o visual transmite acabamento de produto mundial antes de finalizar.
+O agente deve recusar sumariamente a criação de layouts genéricos, caixas cinzas sem vida, minimalismo vazio ou layouts previsíveis de IA ("AI slop").
+
+### A. Coleta Ativa de Inspirações:
+1. **Entrada do Usuário no Chat**:
+   - Convidar o usuário a mandar prints, fotos ou links de sites que ele achou incríveis diretamente no WhatsApp/Telegram.
+   - O agente analisa os prints com visão multimodal em alta resolução para extrair padrões e layout.
+2. **Pesquisa Autônoma no Dribbble & Pinterest (Playwright Headless + IA Multimodal)**:
+   - `search_dribbble_and_analyze_ui(query="...", project_path="...")`: Acessa o Dribbble em navegador headless, captura screenshots em alta definição dos melhores shots de design premiados e disseca a estética (paleta hex, tipografia, microinterações GSAP e shaders).
+   - `search_pinterest_and_analyze_ui(query="...", project_path="...")`: Acessa o Pinterest em navegador headless, limpa popups, fotografa boards e pins de UI/UX modernos e disseca referências visuais com visão multimodal.
+   - `search_mobbin_screens(query="...")`: Consulta benchmarks globais (Linear, Stripe, Apple, Vercel, Supabase, Raycast).
+   - `capture_and_analyze_design(url="...", focus="...")`: Disseca qualquer URL de referência indicada pelo usuário.
+
+### B. Ativação das Skills Globais de Design:
+- **`frontend-design`**: Senso estético ousado, direção de arte intencional e quebra de monotonia.
+- **`impeccable`**: Polimento cirúrgico de espaçamentos, micro-hierarquia e acabamento de luxo.
+- **`motion-design`**: Coreografia de movimento, curvas cúbicas e timing perfeito.
+- **`tailwind-4-docs` (Lombiq)**: Configuração moderna CSS-first com `@theme`, dispensando arquivos JS obsoletos.
+- **`canvas-ui`**: Shaders WebGL/WebGPU interativos em tempo real.
+- **`Three.js`**: Geometrias procedurais sem assets externos quebrados.
+
+---
+
+## 3. Padrão Oficial de Animações & Parallax: GSAP & ScrollTrigger
+
+Para animações dinâmicas, scroll suave e efeitos de parallax, a biblioteca oficial é o **GSAP** (`gsap`, `@gsap/react`, `ScrollTrigger`).
+
+### A. Instalação:
+```bash
+npm i gsap @gsap/react
+```
+
+### B. Arquitetura Segura em Next.js / React 19:
+- Sempre usar `"use client"`.
+- Registrar os plugins no topo:
+  ```tsx
+  import gsap from "gsap";
+  import { ScrollTrigger } from "gsap/ScrollTrigger";
+  import { useGSAP } from "@gsap/react";
+
+  gsap.registerPlugin(ScrollTrigger, useGSAP);
+  ```
+- Utilizar o hook com escopo (`scope: containerRef`) para garantir limpeza automática de memória e evitar bugs de hidratação:
+  ```tsx
+  useGSAP(() => {
+    // Parallax em camada com scrub
+    gsap.to(bgLayerRef.current, {
+      y: 100,
+      ease: "none",
+      scrollTrigger: {
+        trigger: containerRef.current,
+        start: "top bottom",
+        end: "bottom top",
+        scrub: 1.2,
+      },
+    });
+
+    // Entrada em cascata (stagger) dos cards
+    gsap.from(".gsap-stagger-item", {
+      opacity: 0,
+      y: 40,
+      stagger: 0.15,
+      duration: 1.0,
+      ease: "power3.out",
+      scrollTrigger: {
+        trigger: containerRef.current,
+        start: "top 75%",
+      },
+    });
+  }, { scope: containerRef });
+  ```
+- Utilizar o componente pronto `GSAP_PARALLAX_SCENE_TEMPLATE` disponível em `agent/design_system.py`.
+
+---
+
+## 4. Integração de Shaders com Canvas UI (https://canvasui.dev/docs)
+
+Componentes WebGL e WebGPU criativos que rodam diretamente sobre HTML real compatíveis com o ecossistema shadcn.
+
+### A. Instalação via shadcn registry:
+```bash
+npx shadcn@latest add @canvas-ui/<componente>-react
+```
+
+### B. Catálogo Completo de Shaders (35+ Efeitos):
+1. **Fluidos & Líquidos**:
+   - `liquid`: Simulação de fluido com ponteiro que distorce texto e cards reais do DOM.
+   - `liquid-object`: Objeto 3D com física de fluido e refração.
+   - `ripple`: Ondas concêntricas na água propagando ao mover ou clicar.
+   - `droplets`: Gotas de condensação escorrendo e refratando o fundo.
+   - `bubble`: Bolhas orgânicas com aberração cromática.
+2. **Física & Energia**:
+   - `force-field`: Campo magnético interativo que repele elementos ao passar o cursor.
+   - `flame-wrap`: Chamas energéticas envolvendo botões, badges ou cards.
+   - `cloth`: Tecido 3D com física de vento, gravidade e arrasto.
+   - `laser`: Feixe de laser escaneando tipografias e bordas.
+3. **Refração Vítrea & 3D**:
+   - `glass`: Refração cáustica de vidro fosco de altíssimo realismo.
+   - `glass-object`: Objeto 3D vítreo orbitando a interface.
+   - `displacement`: Distorção vetorial orgânica na tipografia ao passar o mouse.
+   - `bend`: Curvatura 3D cilíndrica deformando o container.
+4. **Revelação & Cyberpunk**:
+   - `decrypt-reveal`: Descriptografia de dados em tempo real com glifos cibernéticos.
+   - `particle-reveal`: Vórtice de partículas WebGL revelando títulos ou imagens.
+   - `particle-scroll`: Nuvem de partículas com profundidade no scroll.
+   - `glyph-rain`: Chuva digital de glifos estilo Matrix.
+5. **Retrô & Arte ASCII**:
+   - `ascii-object`: Renderizador volumétrico 3D em tempo real em caracteres ASCII interativos.
+   - `ascii-sweep`: Transição de varredura convertendo elementos em arte ASCII.
+   - `retro-dither`: Dithering Bayer estilo hardware dos anos 90 / lo-fi brutalista.
+   - `vhs` & `glitch`: Distorção analógica CRT com tracking noise e pulso de canal RGB.
+6. **Atmosfera & Ambiente**:
+   - `clouds`: Nuvens procedurais volumétricas com luz ambiente.
+   - `frost`: Cristais de gelo se espalhando pelas bordas no hover.
+   - `grid`: Malha cibernética em perspectiva 3D.
+   - `shatter`: Estilhaçamento geométrico com quebra em múltiplos fragmentos.
+
+---
+
+## 5. Arquitetura de Motion Design (3 Camadas)
+
+1. **Camada 1 (Primária - Entrada)**:
+   - Entradas coreografadas em cascata (stagger < 400ms) com curvas de desaceleração (cubic-bezier(0.16, 1, 0.3, 1) ou GSAP `power3.out`).
+2. **Camada 2 (Secundária - Interação)**:
+   - Micro-interações de feedback tátil: `hover:-translate-y-1`, `hover:border-white/20`, `active:scale-95`, `group-hover:translate-x-1.5`.
+3. **Camada 3 (Terciária - Ambiente)**:
+   - Vida contínua de background (shaders Canvas UI em loop, Three.js em requestAnimationFrame, dots com `animate-ping`).
+
+---
+
+## 6. Validação e Entrega Final
+
+- Toda aplicação gerada deve compilar no terminal (`npm run build`) sem erros de lint ou TypeScript.
+- Apresentar com clareza as escolhas visuais tomadas: paleta hex, tipografia editorial, componentes Canvas UI e cenas GSAP parallax aplicadas.

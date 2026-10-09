@@ -420,133 +420,95 @@ export default function ShimmerButton({
 '''
 
 # ==============================================================================
-# CANVAS UI INTEGRATION (https://canvasui.dev/ - Creative WebGL & WebGPU)
+# GSAP & SCROLLTRIGGER PARALLAX TEMPLATE (GreenSock Motion Engineering)
 # ==============================================================================
-CANVAS_UI_REGISTRY_COMPONENTS = {
-    "particle-reveal": "npx shadcn@latest add @canvas-ui/particle-reveal-react",
-    "force-field": "npx shadcn@latest add @canvas-ui/force-field-react",
-    "flame-wrap": "npx shadcn@latest add @canvas-ui/flame-wrap-react",
-    "glass-object": "npx shadcn@latest add @canvas-ui/glass-object-react",
-    "decrypt-reveal": "npx shadcn@latest add @canvas-ui/decrypt-reveal-react",
-    "glyph-rain": "npx shadcn@latest add @canvas-ui/glyph-rain-react",
-    "frost": "npx shadcn@latest add @canvas-ui/frost-react",
-    "bubble": "npx shadcn@latest add @canvas-ui/bubble-react",
-    "clouds": "npx shadcn@latest add @canvas-ui/clouds-react",
-    "grid": "npx shadcn@latest add @canvas-ui/grid-react",
-    "ascii-object": "npx shadcn@latest add @canvas-ui/ascii-object-react",
-    "liquid": "npx shadcn@latest add @canvas-ui/liquid-react"
-}
+GSAP_PARALLAX_SCENE_TEMPLATE = '''"use client";
 
-# Template de Efeito de Partículas Interativas em Canvas Puro (Zero dependências adicionais)
-CANVAS_INTERACTIVE_PARTICLES_TEMPLATE = '''"use client";
+import React, { useRef } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useGSAP } from "@gsap/react";
 
-import React, { useEffect, useRef } from "react";
+gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-interface CanvasParticlesProps {
-  particleCount?: number;
-  particleColor?: string;
-  lineColor?: string;
+interface GsapParallaxProps {
+  children?: React.ReactNode;
   className?: string;
 }
 
-export default function CanvasInteractiveParticles({
-  particleCount = 50,
-  particleColor = "rgba(168, 85, 247, 0.7)",
-  lineColor = "rgba(168, 85, 247, 0.15)",
-  className = "",
-}: CanvasParticlesProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+export default function GsapParallaxScene({ children, className = "" }: GsapParallaxProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const bgLayerRef = useRef<HTMLDivElement>(null);
+  const midLayerRef = useRef<HTMLDivElement>(null);
+  const foregroundRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  useGSAP(() => {
+    // Parallax suave com scrub vinculado ao scroll da janela
+    gsap.to(bgLayerRef.current, {
+      y: 120,
+      ease: "none",
+      scrollTrigger: {
+        trigger: containerRef.current,
+        start: "top bottom",
+        end: "bottom top",
+        scrub: 1.2,
+      },
+    });
 
-    let animationFrameId: number;
-    let width = (canvas.width = canvas.parentElement?.clientWidth || window.innerWidth);
-    let height = (canvas.height = canvas.parentElement?.clientHeight || 500);
+    gsap.to(midLayerRef.current, {
+      y: -60,
+      scale: 1.05,
+      ease: "none",
+      scrollTrigger: {
+        trigger: containerRef.current,
+        start: "top bottom",
+        end: "bottom top",
+        scrub: 0.8,
+      },
+    });
 
-    const onResize = () => {
-      if (!canvas) return;
-      width = canvas.width = canvas.parentElement?.clientWidth || window.innerWidth;
-      height = canvas.height = canvas.parentElement?.clientHeight || 500;
-    };
-    window.addEventListener("resize", onResize);
+    // Entrada em cascata (stagger) dos cards e elementos filhos
+    gsap.from(".gsap-stagger-item", {
+      opacity: 0,
+      y: 40,
+      stagger: 0.15,
+      duration: 1.0,
+      ease: "power3.out",
+      scrollTrigger: {
+        trigger: containerRef.current,
+        start: "top 75%",
+      },
+    });
+  }, { scope: containerRef });
 
-    // Mouse tracker
-    const mouse = { x: -1000, y: -1000, radius: 120 };
-    const onMouseMove = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      mouse.x = e.clientX - rect.left;
-      mouse.y = e.clientY - rect.top;
-    };
-    window.addEventListener("mousemove", onMouseMove);
+  return (
+    <div ref={containerRef} className={`relative overflow-hidden w-full min-h-[90vh] py-20 px-6 ${className}`}>
+      {/* Camada de fundo com profundidade atmosférica */}
+      <div
+        ref={bgLayerRef}
+        className="absolute inset-0 -top-24 pointer-events-none opacity-40 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.3),rgba(255,255,255,0))]"
+      />
 
-    // Particles setup
-    const particles = Array.from({ length: particleCount }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.8,
-      vy: (Math.random() - 0.5) * 0.8,
-      size: Math.random() * 2 + 1,
-    }));
+      {/* Camada intermediária com partículas / orbes sutis */}
+      <div
+        ref={midLayerRef}
+        className="absolute top-1/3 left-1/4 w-96 h-96 rounded-full bg-violet-600/15 blur-3xl pointer-events-none"
+      />
 
-    const render = () => {
-      ctx.clearRect(0, 0, width, height);
-
-      // Draw and connect particles
-      for (let i = 0; i < particles.length; i++) {
-        const p = particles[i];
-        p.x += p.vx;
-        p.y += p.vy;
-
-        if (p.x < 0 || p.x > width) p.vx *= -1;
-        if (p.y < 0 || p.y > height) p.vy *= -1;
-
-        // Interaction with mouse
-        const dx = mouse.x - p.x;
-        const dy = mouse.y - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < mouse.radius) {
-          const force = (mouse.radius - dist) / mouse.radius;
-          p.x -= (dx / dist) * force * 2;
-          p.y -= (dy / dist) * force * 2;
-        }
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = particleColor;
-        ctx.fill();
-
-        for (let j = i + 1; j < particles.length; j++) {
-          const p2 = particles[j];
-          const d2 = Math.hypot(p.x - p2.x, p.y - p2.y);
-          if (d2 < 110) {
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(p2.x, p2.y);
-            ctx.strokeStyle = lineColor;
-            ctx.lineWidth = 1 - d2 / 110;
-            ctx.stroke();
-          }
-        }
-      }
-
-      animationFrameId = requestAnimationFrame(render);
-    };
-
-    render();
-
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("mousemove", onMouseMove);
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, [particleCount, particleColor, lineColor]);
-
-  return <canvas ref={canvasRef} className={`absolute inset-0 pointer-events-none z-0 ${className}`} />;
+      {/* Conteúdo em primeiro plano */}
+      <div ref={foregroundRef} className="relative z-10 max-w-7xl mx-auto">
+        {children}
+      </div>
+    </div>
+  );
 }
 '''
+
+# ==============================================================================
+# CANVAS UI SHADER & COMPONENT CATALOG (https://canvasui.dev/docs)
+# ==============================================================================
+from tools.canvas_tool import CANVAS_UI_FULL_CATALOG
+
+
 
 
