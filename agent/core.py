@@ -817,6 +817,11 @@ DIRETRIZES FUNDAMENTAIS DE AUTONOMIA & RESOLUÇÃO DE PROBLEMAS:
    - O pedido inicial do usuário ("crie...", "edite...", "corrija...", "arrume...", "faça...", "implemente...", "adicione...") JÁ É A SUA AUTORIZAÇÃO COMPLETA.
    - Ao receber o pedido, você DEVE EXECUTAR AS FERRAMENTAS IMEDIATAMENTE (list_directory, read_file, write_file, replace_in_file, execute_terminal_command) NO MESMO TURNO até concluir as modificações!
    - NUNCA diga "Tarefa concluída" ou "Tudo pronto" se você não tiver executado as ferramentas fisicamente. Se você não alterou o arquivo ou não rodou o comando, a tarefa NÃO foi concluída.
+   - REGRA DE OURO - INSPEÇÃO NÃO É CONCLUSÃO:
+     * Chamar 'list_directory' ou ler 'package.json' é APENAS A FASE PREPARATÓRIA DE EXPLORAÇÃO (10% do trabalho).
+     * NUNCA pare nem responda ao usuário após apenas listar pastas ou ler package.json quando o pedido for de refatoração, criação ou replicação de design.
+     * Você DEVE prosseguir no mesmo turno: ler o arquivo de tela ('read_file' em 'src/app/page.tsx', 'src/components/...' ou globals.css), aplicar as modificações reais com 'write_file' ou 'replace_in_file', e validar com 'execute_terminal_command(command="npm run build", ...)'.
+     * Concluir após apenas ler arquivos de configuração é uma FALHA GRAVE de execução!
    - Se o usuário disser apenas "sim", "pode", "autorizo", "vai", "continua", "ok", NÃO repita o plano nem agradeça: CHAME AS FERRAMENTAS E EXECUTE AS AÇÕES PENDENTES AGORA MESMO!
    - Se um build, scaffold ou comando falhar (ex: erro de compilação TypeScript no 'npm run build', erro de linting, importação ausente ou quebrada, erro 502 Bad Gateway no container, ou conflito no git):
      a) Leia atentamente a mensagem de erro e a stack trace retornada.
@@ -1098,6 +1103,43 @@ def _is_short_affirmation(text: str) -> bool:
         return True
     return False
 
+def _is_action_request(text: str, media_info: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    Detecta se o prompt do usuário ou contexto indica um pedido de ação concreta
+    (modificação de código, criação, refatoração, replicação de design, build, deploy, etc.).
+    """
+    clean = (text or "").lower().strip()
+    
+    if _is_short_affirmation(clean):
+        return True
+
+    # Radicais e termos de ação direta de engenharia e design
+    action_stems = [
+        "refator", "replic", "recri", "clon", "copi", "redesenh", "remodel",
+        "estiliz", "desenh", "design", "cri", "mont", "constru", "desenvolv",
+        "edit", "alter", "modific", "ajust", "arrum", "consert", "corrig",
+        "implement", "adicion", "inser", "coloc", "bot", "mud", "troc",
+        "atualiz", "remov", "delet", "apag", "faz", "fazer", "faça", "faca",
+        "escrev", "aplic", "instal", "execut", "rod", "sub", "deploy", "build",
+        "commit", "push", "melhor", "otimiz", "adapt", "transform", "padroniz",
+        "migr", "integr", "configur", "repar", "ger"
+    ]
+    
+    if any(stem in clean for stem in action_stems):
+        return True
+        
+    # Se uma imagem foi anexada e o prompt não é apenas uma dúvida passiva simples
+    if media_info and media_info.get("type") == "image":
+        passive_questions = [
+            "o que é isso", "o que e isso", "o que você acha", "o que voce acha",
+            "qual a cor", "qual é a cor", "o que está escrito", "leia o texto",
+            "qual fonte", "apenas analise", "só analise", "so analise"
+        ]
+        if not any(pq in clean for pq in passive_questions):
+            return True
+
+    return False
+
 async def run_agent_loop(
     user_prompt: str,
     user_id: str,
@@ -1117,6 +1159,7 @@ async def run_agent_loop(
     messages.extend(history)
 
     # Enriquece confirmações curtas para impedir que o modelo entre em loop de confirmação
+    # Enriquece confirmações curtas ou solicitações de ação para garantir execução real
     effective_user_prompt = user_prompt
     if _is_short_affirmation(user_prompt):
         effective_user_prompt = (
@@ -1126,6 +1169,19 @@ async def run_agent_loop(
             "CHAME IMEDIATAMENTE as ferramentas necessárias ('replace_in_file', 'write_file', 'execute_terminal_command', etc.) "
             "para aplicar as alterações reais no projeto agora mesmo!"
         )
+    elif _is_action_request(user_prompt, media_info):
+        action_directive = (
+            "\n\n[SISTEMA - DIRETIVA DE EXECUÇÃO OBRIGATÓRIA]:\n"
+            "Esta solicitação requer AÇÃO CONCRETA DE DESENVOLVIMENTO, DESIGN OU REFATORAÇÃO DE CÓDIGO. "
+            "Você NÃO deve apenas inspecionar diretórios ou ler arquivos de configuração e parar!\n"
+            "FLUXO OBRIGATÓRIO NESTA SESSÃO:\n"
+            "1. Localize o arquivo de interface/código principal (ex: 'src/app/page.tsx', componentes em 'src/components/' ou estilos em 'src/app/globals.css').\n"
+            "2. Leia o arquivo com 'read_file'.\n"
+            "3. USE 'write_file' OU 'replace_in_file' para gravar o novo código, aplicando o design com fidelidade (paleta de cores, tipografia, Tailwind v4, animações GSAP ou shaders se aplicável).\n"
+            "4. Valide a compilação executando 'execute_terminal_command(command=\"npm run build\", working_directory=..., target=\"pc\")'. Se houver erro de build, conserte imediatamente.\n"
+            "5. É TERMINANTEMENTE PROIBIDO declarar 'tarefa concluída' ou parar sem ter gravado o código com 'write_file' ou 'replace_in_file'!"
+        )
+        effective_user_prompt = f"{user_prompt}{action_directive}"
 
     # Suporte multimodal nativo (imagens e capturas visuais)
     if media_info and media_info.get("type") == "image" and media_info.get("base64"):
@@ -1149,6 +1205,7 @@ async def run_agent_loop(
 
     turns = 0
     modifying_tools_called = 0
+    files_modified_count = 0
     guard_rail_turns = 0
     final_reply = ""
 
@@ -1215,27 +1272,73 @@ async def run_agent_loop(
                 "autorização para prosseguir", "autorização para aplicar", "autoriza?"
             ]
             is_asking_permission = any(t in content_lower for t in hesitation_triggers)
-            
-            # Checa se o usuário pediu uma ação modificadora ou confirmou ação anterior
-            user_intent_action = any(k in user_prompt.lower() for k in [
-                "cria", "edita", "altera", "modifica", "adiciona", "remove", "deleta",
-                "conserta", "arruma", "implementa", "muda", "atualiza", "corrige",
-                "troca", "faz", "escreve", "coloca", "aplica", "instala", "build"
-            ]) or _is_short_affirmation(user_prompt)
 
-            # GUARD RAIL ANTI-HESITAÇÃO: Se o modelo pediu permissão OU se o usuário pediu ação mas nenhuma ferramenta modificadora foi chamada ainda
-            if guard_rail_turns < 2 and (is_asking_permission or (user_intent_action and modifying_tools_called == 0)):
+            claims_completion = any(t in content_lower for t in [
+                "tarefa concluída", "tarefa finalizada", "tudo pronto", "está pronto", "esta pronto",
+                "já está pronto", "ja esta pronto", "concluí", "conclui", "finalizei", "terminei",
+                "finalizado com sucesso", "concluído com sucesso", "concluido com sucesso",
+                "pronto!", "refatorei", "repliquei", "criei", "alterei", "implementei",
+                "código atualizado", "design replicado", "design implementado", "componente criado"
+            ])
+            
+            user_intent_action = _is_action_request(user_prompt, media_info)
+
+            # Identifica se a solicitação envolve design, UI ou código de aplicação
+            is_design_or_code_request = any(stem in user_prompt.lower() for stem in [
+                "refator", "replic", "recri", "clon", "copi", "redesenh", "estiliz",
+                "desenh", "design", "cri", "edit", "alter", "modific", "implement",
+                "layout", "tela", "interface", "landing", "componente", "ui", "página", "pagina"
+            ]) or bool(media_info and media_info.get("type") == "image")
+
+            needs_file_modification = is_design_or_code_request and files_modified_count == 0
+            needs_any_modification = user_intent_action and modifying_tools_called == 0
+
+            should_enforce_action = (
+                is_asking_permission
+                or needs_any_modification
+                or needs_file_modification
+                or (claims_completion and (modifying_tools_called == 0 or (is_design_or_code_request and files_modified_count == 0)))
+            )
+
+            # GUARD RAIL ANTI-HESITAÇÃO & ANTI-CONCLUSÃO PREMATURA:
+            # Impede que o modelo encerre o turno após apenas ler diretórios ou arquivos sem aplicar as modificações físicas
+            if guard_rail_turns < 4 and should_enforce_action:
                 guard_rail_turns += 1
                 prompt_enforcement = (
-                    "[SISTEMA - AÇÃO OBRIGATÓRIA]: Você é um agente autônomo sênior com permissão total e irrestrita concedida pelo usuário. "
-                    "NUNCA pergunte se pode alterar, NUNCA peça confirmação e NUNCA declare tarefa concluída sem agir fisicamente. "
-                    "CHAME IMEDIATAMENTE as ferramentas necessárias ('replace_in_file', 'write_file', 'execute_terminal_command', etc.) "
-                    "para aplicar as alterações reais no código/sistema agora mesmo!"
+                    "[SISTEMA - EXECUÇÃO OBRIGATÓRIA - INTERRUPÇÃO DE CONCLUSÃO PREMATURA]:\n"
+                    "VOCÊ AINDA NÃO EXECUTOU AS ALTERAÇÕES FÍSICAS SOLICITADAS!\n"
+                    f"- Ferramentas modificadoras chamadas: {modifying_tools_called}\n"
+                    f"- Arquivos gravados/editados (write_file/replace_in_file): {files_modified_count}\n\n"
+                    "Ler diretórios ('list_directory') ou ler configurações ('read_file') NÃO É CONCLUSÃO DE TAREFA. "
+                    f"O usuário solicitou uma ação de desenvolvimento/design/refatoração ('{user_prompt[:90]}...').\n\n"
+                    "SUA OBRIGAÇÃO AGORA É:\n"
+                    "1. Localizar o arquivo de código/UI relevante (ex: 'src/app/page.tsx', componentes em 'src/components/' ou CSS).\n"
+                    "2. Ler o código atual se ainda não o fez ('read_file').\n"
+                    "3. Gravar o novo código usando 'write_file' ou 'replace_in_file' aplicando as mudanças solicitadas (design, layout, Tailwind v4, animações GSAP ou shaders).\n"
+                    "4. Validar executando 'npm run build' via 'execute_terminal_command'.\n"
+                    "NÃO responda em texto simples agora. EXECUTE A PRÓXIMA FERRAMENTA IMEDIATAMENTE!"
                 )
                 messages.append({"role": "user", "content": prompt_enforcement})
                 continue
 
-            final_reply = msg.content or "Tarefa concluída."
+            if not msg.content or not msg.content.strip():
+                if files_modified_count > 0 or modifying_tools_called > 0:
+                    final_reply = "Alterações aplicadas e validadas com sucesso no projeto!"
+                else:
+                    final_reply = "Análise preliminar dos arquivos realizada. Pronto para aplicar as modificações."
+            else:
+                final_reply = msg.content
+
+            # Impede a mentira de "tarefa concluída" se nenhuma ferramenta de modificação foi chamada
+            if user_intent_action and modifying_tools_called == 0:
+                for lie in ["tarefa concluída", "tarefa finalizada", "tudo pronto", "já está pronto", "ja esta pronto", "concluído com sucesso", "concluido com sucesso"]:
+                    if lie in final_reply.lower():
+                        final_reply = (
+                            "⚠️ *Nota do Sistema:* A inspeção dos arquivos e diretórios foi realizada, mas nenhuma alteração física foi gravada no código ainda.\n\n"
+                            f"{final_reply}"
+                        )
+                        break
+
             memory.add_message(user_id, {"role": "assistant", "content": final_reply})
             break
 
@@ -1501,8 +1604,16 @@ async def run_agent_loop(
                 "setup_docker_deployment", "manage_pc_power", "download_youtube_media",
                 "download_playlist_media"
             }
-            if fn_name in MODIFYING_TOOL_NAMES or fn_name == "execute_terminal_command":
+            if fn_name in {"write_file", "replace_in_file"}:
+                files_modified_count += 1
                 modifying_tools_called += 1
+            elif fn_name in MODIFYING_TOOL_NAMES:
+                modifying_tools_called += 1
+            elif fn_name == "execute_terminal_command":
+                cmd = args.get("command", "").lower()
+                read_only_cmds = ["git status", "git branch", "git diff", "dir", "ls", "type ", "cat ", "pwd", "echo "]
+                if not any(k in cmd for k in read_only_cmds):
+                    modifying_tools_called += 1
 
             tool_output_str = str(tool_output)
             if len(tool_output_str) > 3500:
